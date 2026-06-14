@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "actgpr"
+version = "0.1.0"
+description = "Active GPR Optimisation package"
+authors = ["Alexander Schroder"]
+readme = "README.md"
+packages = [{include = "actgpr", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
