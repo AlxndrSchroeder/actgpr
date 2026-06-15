@@ -13,31 +13,39 @@ class Objective:
         """Initialize the Objective."""
         pass
 
-    def evaluate(self, input_point: float) -> float:
-        """Evaluate the objective at a single input point.
+    def evaluate(self, *args: float) -> tuple[float, ...]:
+        """Evaluate the objective at multiple input points.
 
         Parameters
         ----------
-        input_point : float
-            A single value (currently 1D scalar) passed to the Objective.
+        *args : float
+            Arbitrary positional arguments representing the input values to evaluate.
 
         Returns
         -------
-        float
-            The scalar evaluation result of input_point^2.
+        tuple of float
+            The quadratic evaluation result (value^2) for each input value in the same order.
 
         Raises
         ------
+        ValueError
+            If no input arguments are provided.
         TypeError
-            If the input_point is not a float or integer.
+            If any of the input values cannot be converted to a float.
         """
-        try:
-            return float(input_point**2)
-        except TypeError as exc:
-            raise TypeError(
-                f"Expected float or int for input_point, got {type(input_point).__name__}"
-            ) from exc
+        if not args:
+            raise ValueError("At least one input argument must be provided.")
+
+        results = []
+        for i, value in enumerate(args):
+            try:
+                results.append(float(value**2))
+            except TypeError as exc:
+                raise TypeError(
+                    f"Expected float or int for argument at index {i}, got {type(value).__name__}"
+                ) from exc
+        return tuple(results)
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the Objective."""
-        return "Objective(function=input_point^2)"
+        return "Objective(function=args^2)"

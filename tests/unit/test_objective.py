@@ -6,11 +6,22 @@ from actgpr.objective import Objective
 
 
 def test_objective_evaluation() -> None:
-    """Test that the objective evaluates inputs correctly."""
+    """Test that the objective evaluates positional inputs correctly."""
     objective = Objective()
-    assert objective.evaluate(2.0) == 4.0
-    assert objective.evaluate(-3.0) == 9.0
-    assert objective.evaluate(0.0) == 0.0
+    # Single inputs
+    assert objective.evaluate(2.0) == (4.0,)
+    assert objective.evaluate(-3.0) == (9.0,)
+    assert objective.evaluate(0.0) == (0.0,)
+
+    # Multiple inputs
+    assert objective.evaluate(2.0, -3.0, 0.0) == (4.0, 9.0, 0.0)
+
+
+def test_objective_empty_input() -> None:
+    """Test that the objective raises ValueError when no inputs are provided."""
+    objective = Objective()
+    with pytest.raises(ValueError):
+        objective.evaluate()
 
 
 def test_objective_invalid_input_type() -> None:
@@ -23,4 +34,4 @@ def test_objective_invalid_input_type() -> None:
 def test_objective_repr() -> None:
     """Test the string representation of the Objective."""
     objective = Objective()
-    assert repr(objective) == "Objective(function=input_point^2)"
+    assert repr(objective) == "Objective(function=args^2)"
