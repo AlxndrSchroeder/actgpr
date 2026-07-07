@@ -54,6 +54,9 @@ CONTEXT.md
 # Scratch scripts
 run_test.py
 runtest.py
+run_test_2.py
+runtest_2.py
+
 
 # PlantUML diagrams
 *.puml
