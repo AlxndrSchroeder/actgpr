@@ -239,13 +239,16 @@ class GPyTorchSurrogate:
             "f_samples": f_samples,
         }
 
-    def plot(self, test_x: torch.Tensor) -> None:
+    def plot(self, test_x: torch.Tensor, show: bool = True) -> None:
         """Plot the fitted model predictions against the training evaluations.
 
         Parameters
         ----------
         test_x : torch.Tensor of shape (m,)
             The test input points used to compute predictions for plotting.
+        show : bool, optional
+            Whether to call plt.show() immediately, by default True.
+            Set to False when plotting multiple surrogates before displaying.
 
         Raises
         ------
@@ -280,4 +283,7 @@ class GPyTorchSurrogate:
             # Shade between the lower and upper confidence bounds
             ax.fill_between(test_x.numpy(), lower.numpy(), upper.numpy(), alpha=0.5)
             ax.legend(["Observed Data", "Mean", "Confidence"])
-            plt.show()
+
+            if show:
+                plt.show()
+
