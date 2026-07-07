@@ -286,33 +286,58 @@ class TestGPyTorchSurrogatePredict:
 
 
 # ---------------------------------------------------------------------------
-# GPyTorchSurrogate.plot
+# plot_surrogate (from plotting module)
 # ---------------------------------------------------------------------------
 
 
-class TestGPyTorchSurrogatePlot:
-    """Tests for GPyTorchSurrogate.plot()."""
+class TestPlotSurrogate:
+    """Tests for the plot_surrogate() function."""
 
     def test_plot_raises_before_fit(self) -> None:
-        """Test that plot() raises RuntimeError on an unfitted model."""
+        """Test that plot_surrogate() raises RuntimeError on an unfitted model."""
+        from actgpr.plotting import plot_surrogate
+
         model = GPyTorchSurrogate()
         test_x = torch.linspace(0, 1, 10)
 
         with pytest.raises(RuntimeError, match="fitted"):
-            model.plot(test_x)
+            plot_surrogate(model, test_x)
 
     def test_plot_runs_without_error(
         self,
         fitted_model: GPyTorchSurrogate,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Test that plot() executes without raising when the model is fitted.
+        """Test that plot_surrogate() executes without raising when the model is fitted.
 
         Uses monkeypatch to suppress plt.show() so no window opens during CI.
         """
         import matplotlib.pyplot as plt
 
+        from actgpr.plotting import plot_surrogate
+
         monkeypatch.setattr(plt, "show", lambda: None)
 
         test_x = torch.linspace(0, 1, 10)
-        fitted_model.plot(test_x)  # Should not raise
+        fig, ax = plot_surrogate(fitted_model, test_x)
+
+        assert fig is not None
+        assert ax is not None
+
+    def test_plot_uses_provided_axes(
+        self,
+        fitted_model: GPyTorchSurrogate,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Test that plot_surrogate() draws on a provided axes instead of creating a new one."""
+        import matplotlib.pyplot as plt
+
+        from actgpr.plotting import plot_surrogate
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        fig, ax = plt.subplots(1, 1)
+        test_x = torch.linspace(0, 1, 10)
+        returned_fig, returned_ax = plot_surrogate(fitted_model, test_x, ax=ax)
+
+        assert returned_ax is ax
