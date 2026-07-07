@@ -167,7 +167,14 @@ class TestGPyTorchSurrogatePredict:
         test_x = torch.linspace(0, 1, 10)
         preds = fitted_model.predict(test_x)
 
-        expected_keys = {"f_preds", "observed_pred", "f_mean", "f_var", "f_covar", "f_samples"}
+        expected_keys = {
+            "f_preds",
+            "observed_pred",
+            "f_mean",
+            "f_var",
+            "f_covar",
+            "f_samples",
+        }
         assert set(preds.keys()) == expected_keys
 
     def test_predict_output_shapes(
@@ -249,7 +256,9 @@ class TestGPyTorchSurrogatePredict:
         preds = fitted_model.predict(test_x)
 
         assert isinstance(preds["f_preds"], gpytorch.distributions.MultivariateNormal)
-        assert isinstance(preds["observed_pred"], gpytorch.distributions.MultivariateNormal)
+        assert isinstance(
+            preds["observed_pred"], gpytorch.distributions.MultivariateNormal
+        )
 
     def test_predict_f_covar_is_positive_semi_definite(
         self,
@@ -260,9 +269,9 @@ class TestGPyTorchSurrogatePredict:
         preds = fitted_model.predict(test_x)
 
         eigenvalues = torch.linalg.eigvalsh(preds["f_covar"])
-        assert torch.all(eigenvalues >= -1e-5), (
-            f"f_covar has negative eigenvalues: {eigenvalues[eigenvalues < -1e-5]}"
-        )
+        assert torch.all(
+            eigenvalues >= -1e-5
+        ), f"f_covar has negative eigenvalues: {eigenvalues[eigenvalues < -1e-5]}"
 
     def test_predict_observed_variance_geq_latent_variance(
         self,

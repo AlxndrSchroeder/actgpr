@@ -2,12 +2,11 @@
 
 import math
 
-import gpytorch
 import pytest
 import torch
 
 from actgpr.objective import Objective
-from actgpr.surrogate import ExactGPModel, GPyTorchSurrogate
+from actgpr.surrogate import GPyTorchSurrogate
 
 SEED = 42
 
