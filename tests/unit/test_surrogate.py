@@ -85,7 +85,7 @@ class TestGPyTorchSurrogateInit:
 
 
 class TestGPyTorchSurrogateFit:
-    """Tests for GPyTorchSurrogate.fit()."""
+    """Tests for GPyTorchSurrogate.fit_and_train()."""
 
     def test_fit_populates_model_and_likelihood(
         self,
@@ -94,7 +94,7 @@ class TestGPyTorchSurrogateFit:
         """Test that fit() creates a model and likelihood."""
         train_x, train_y = training_data
         model = GPyTorchSurrogate()
-        model.fit(train_x, train_y, training_iter=5)
+        model.fit_and_train(train_x, train_y, training_iter=5)
 
         assert model.model is not None
         assert model.likelihood is not None
@@ -108,7 +108,7 @@ class TestGPyTorchSurrogateFit:
         """Test that fit() stores a reference to the original training data."""
         train_x, train_y = training_data
         model = GPyTorchSurrogate()
-        model.fit(train_x, train_y, training_iter=5)
+        model.fit_and_train(train_x, train_y, training_iter=5)
 
         assert torch.equal(model.train_x, train_x)
         assert torch.equal(model.train_y, train_y)
@@ -120,7 +120,7 @@ class TestGPyTorchSurrogateFit:
         train_y = torch.linspace(0, 1, 5)
 
         with pytest.raises(ValueError, match="Shape mismatch"):
-            model.fit(train_x, train_y)
+            model.fit_and_train(train_x, train_y)
 
     def test_fit_is_deterministic(
         self,
@@ -131,11 +131,11 @@ class TestGPyTorchSurrogateFit:
 
         torch.manual_seed(SEED)
         model_a = GPyTorchSurrogate()
-        model_a.fit(train_x, train_y, training_iter=20)
+        model_a.fit_and_train(train_x, train_y, training_iter=20)
 
         torch.manual_seed(SEED)
         model_b = GPyTorchSurrogate()
-        model_b.fit(train_x, train_y, training_iter=20)
+        model_b.fit_and_train(train_x, train_y, training_iter=20)
 
         assert model_a.model is not None and model_b.model is not None
         ls_a = model_a.model.covar_module.base_kernel.lengthscale
@@ -232,7 +232,7 @@ class TestGPyTorchSurrogatePredict:
         """
         train_x, train_y = training_data
         model = GPyTorchSurrogate()
-        model.fit(train_x, train_y, training_iter=50)
+        model.fit_and_train(train_x, train_y, training_iter=50)
 
         preds_at_train = model.predict(train_x)
         var_at_train = preds_at_train["f_var"].mean()

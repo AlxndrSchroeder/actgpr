@@ -33,5 +33,5 @@ def fitted_model(
     """Return a GPyTorchSurrogate that has already been fitted."""
     train_x, train_y = training_data
     model = GPyTorchSurrogate()
-    model.fit(train_x, train_y, training_iter=20)
+    model.fit_and_train(train_x, train_y, training_iter=20)
     return model
