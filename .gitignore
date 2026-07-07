@@ -52,11 +52,7 @@ project.md
 CONTEXT.md
 
 # Scratch scripts
-run_test.py
-runtest.py
-run_test_2.py
-runtest_2.py
-
+run_test*.py
 
 # PlantUML diagrams
 *.puml
