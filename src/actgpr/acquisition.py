@@ -62,7 +62,18 @@ class Acquisition:
         -------
         torch.Tensor of shape (m,)
             The EI score for each candidate point.
+
+        Raises
+        ------
+        ValueError
+            If f_mean and f_var have different shapes.
         """
+        if f_mean.shape != f_var.shape:
+            raise ValueError(
+                f"Shape mismatch: f_mean shape {f_mean.shape} must match "
+                f"f_var shape {f_var.shape}"
+            )
+
         f_std = torch.sqrt(f_var)
 
         # Where std is zero, improvement is zero (no uncertainty)
@@ -98,6 +109,11 @@ class Acquisition:
         -------
         float
             The input point with the highest EI score.
+
+        Raises
+        ------
+        RuntimeError
+            If the surrogate has not been fitted prior to calling.
         """
         lo, hi = self.search_bounds
         candidates = torch.linspace(lo, hi, self.n_candidates)
