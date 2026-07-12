@@ -1,17 +1,29 @@
 """Objective function module for active GPR optimisation."""
 
+from typing import Callable
+
+# Default objective function: f(x) = x^2
+DEFAULT_FUNC = lambda x: x**2
+
 
 class Objective:
     """Objective function for active GPR optimisation.
 
     This class represents the real-valued scalar function being optimised.
-    In this implementation, it evaluates the quadratic function:
-    f(input_point) = input_point^2.
+    It can be configured with an arbitrary single-input function.
+    By default, it evaluates the quadratic function: f(x) = x^2.
     """
 
-    def __init__(self) -> None:
-        """Initialize the Objective."""
-        pass
+    def __init__(self, func: Callable[[float], float] | None = None) -> None:
+        """Initialize the Objective.
+
+        Parameters
+        ----------
+        func : callable, optional
+            A single-input callable that takes a float and returns a float.
+            Defaults to lambda x: x**2.
+        """
+        self.func = func if func is not None else DEFAULT_FUNC
 
     def evaluate(self, *args: float) -> tuple[float, ...]:
         """Evaluate the objective at multiple input points.
@@ -24,14 +36,15 @@ class Objective:
         Returns
         -------
         tuple of float
-            The quadratic evaluation result (value^2) for each input value in the same order.
+            The function evaluation result for each input value in the same order.
 
         Raises
         ------
         ValueError
             If no input arguments are provided.
         TypeError
-            If any of the input values cannot be converted to a float.
+            If any of the input values cannot be converted to a float, or if
+            the custom function fails to execute on the input.
         """
         if not args:
             raise ValueError("At least one input argument must be provided.")
@@ -39,13 +52,28 @@ class Objective:
         results = []
         for i, value in enumerate(args):
             try:
-                results.append(float(value**2))
-            except TypeError as exc:
+                float_val = float(value)
+            except (TypeError, ValueError) as exc:
                 raise TypeError(
                     f"Expected float or int for argument at index {i}, got {type(value).__name__}"
                 ) from exc
+
+            try:
+                results.append(float(self.func(float_val)))
+            except Exception as exc:
+                raise TypeError(
+                    f"Error evaluating objective function at index {i} with value {value}: {exc}"
+                ) from exc
+
         return tuple(results)
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the Objective."""
-        return "Objective(function=args^2)"
+        if self.func is DEFAULT_FUNC:
+            func_desc = "x^2"
+        elif hasattr(self.func, "__name__") and self.func.__name__ != "<lambda>":
+            func_desc = self.func.__name__
+        else:
+            func_desc = "custom_function"
+
+        return f"Objective(function={func_desc})"
