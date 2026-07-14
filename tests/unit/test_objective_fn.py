@@ -2,7 +2,7 @@
 
 import pytest
 
-from actgpr.objective import ObjectiveFn
+from actgpr.objective_fn import ObjectiveFn
 
 
 def test_objective_evaluation(objective: ObjectiveFn) -> None:

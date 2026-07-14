@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from actgpr.objective import ObjectiveFn
+from actgpr.objective_fn import ObjectiveFn
 from actgpr.surrogate import GPyTorchSurrogate
 
 SEED = 42

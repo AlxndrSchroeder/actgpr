@@ -7,7 +7,7 @@ function, evaluate objective, repeat until convergence.
 import torch
 
 from actgpr.acquisition import Acquisition
-from actgpr.objective import ObjectiveFn
+from actgpr.objective_fn import ObjectiveFn
 from actgpr.surrogate import GPyTorchSurrogate
 
 
