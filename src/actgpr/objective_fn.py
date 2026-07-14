@@ -2,8 +2,13 @@
 
 from typing import Callable
 
-# Default objective function: f(x) = x^2
-DEFAULT_FUNC = lambda x: x**2
+
+def _default_func(x: float) -> float:
+    """Evaluate the default objective function f(x) = x^2."""
+    return x**2
+
+
+DEFAULT_FUNC = _default_func
 
 
 class ObjectiveFn:

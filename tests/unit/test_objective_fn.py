@@ -50,8 +50,7 @@ def test_objective_repr(objective: ObjectiveFn) -> None:
 
 def test_custom_callable_objective() -> None:
     """Test custom objective initialisation and evaluation."""
-    custom_func = lambda x: (x + 2) ** 2
-    obj = ObjectiveFn(custom_func)
+    obj = ObjectiveFn(lambda x: (x + 2) ** 2)
 
     assert obj.evaluate(1.0) == (9.0,)
     assert obj.evaluate(-2.0) == (0.0,)
@@ -60,6 +59,7 @@ def test_custom_callable_objective() -> None:
 
 def test_custom_named_function_repr() -> None:
     """Test that repr uses function names for normal named functions."""
+
     def my_cool_function(x: float) -> float:
         return x + 5
 
@@ -69,6 +69,7 @@ def test_custom_named_function_repr() -> None:
 
 def test_custom_function_error_propagation() -> None:
     """Test that errors inside custom functions are caught and raised as TypeError."""
+
     def failing_func(x: float) -> float:
         raise ValueError("Something went wrong inside the function")
 

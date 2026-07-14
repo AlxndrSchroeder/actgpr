@@ -69,7 +69,7 @@ class OptimisationRun:
         ------
         ValueError
             If initial_train_x is empty or max_evaluations is less than the
-            number of initial points. #TODO max_evaluations can be less than number of initial points! 
+            number of initial points. #TODO max_evaluations can be less than number of initial points!
         """
         # Cast to float64 regardless of input dtype (list or tensor, int or
         # float) so later torch.cat calls never truncate fractional points.

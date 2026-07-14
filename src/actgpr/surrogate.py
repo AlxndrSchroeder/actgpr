@@ -3,8 +3,9 @@
 import torch
 import gpytorch
 
-#TODO a input of the surrogate should be "noise"
-#TODO maybe lengthscale l and outputscale sigma^2 too! for train and non train
+# TODO a input of the surrogate should be "noise"
+# TODO maybe lengthscale l and outputscale sigma^2 too! for train and non train
+
 
 class ExactGPModel(gpytorch.models.ExactGP):
     """An exact Gaussian Process model with Constant mean and scaled RBF kernel.
@@ -215,7 +216,9 @@ class GPyTorchSurrogate:
         self.model.eval()
         self.likelihood.eval()
 
-        with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.cholesky_jitter(1e-4):
+        with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.cholesky_jitter(
+            1e-4
+        ):
             f_preds = self.model(test_x_double)
             observed_pred = self.likelihood(f_preds)
 
