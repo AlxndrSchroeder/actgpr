@@ -34,7 +34,7 @@ class OptimisationRun:
         objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
-        initial_train_x: torch.Tensor,
+        initial_train_x: torch.Tensor | list[float],
         max_evaluations: int,
         ei_threshold: float,
         n_candidates: int = 500,
@@ -50,8 +50,11 @@ class OptimisationRun:
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
             The closed interval (lo, hi) within which input points are considered.
-        initial_train_x : torch.Tensor of shape (n,)
-            The initial input points to seed the optimisation loop.
+        initial_train_x : torch.Tensor or list[float] of shape (n,)
+            The initial input points to seed the optimisation loop. Cast to
+            float64 regardless of input dtype, so integer-valued inputs
+            (e.g. [1, 2]) don't silently truncate later fractional points
+            appended during the optimisation loop.
         max_evaluations : int
             Maximum total number of objective evaluations (budget cap).
         ei_threshold : float
@@ -68,12 +71,16 @@ class OptimisationRun:
             If initial_train_x is empty or max_evaluations is less than the
             number of initial points. #TODO max_evaluations can be less than number of initial points! 
         """
-        if initial_train_x.numel() == 0:
+        # Cast to float64 regardless of input dtype (list or tensor, int or
+        # float) so later torch.cat calls never truncate fractional points.
+        self.train_x = torch.as_tensor(initial_train_x, dtype=torch.float64).clone()
+
+        if self.train_x.numel() == 0:
             raise ValueError("initial_train_x must contain at least one point.")
-        if max_evaluations <= initial_train_x.numel():
+        if max_evaluations <= self.train_x.numel():
             raise ValueError(
                 f"max_evaluations ({max_evaluations}) must be greater than the "
-                f"number of initial points ({initial_train_x.numel()})."
+                f"number of initial points ({self.train_x.numel()})."
             )
 
         self.objective = objective
@@ -84,7 +91,6 @@ class OptimisationRun:
         self.ei_threshold = ei_threshold
 
         # Evaluate the objective at initial points to get train_y
-        self.train_x = initial_train_x.clone()
         self.train_y = torch.tensor(
             self.objective.evaluate(*self.train_x.tolist()), dtype=self.train_x.dtype
         )
