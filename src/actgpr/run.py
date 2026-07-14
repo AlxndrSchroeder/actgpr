@@ -7,15 +7,15 @@ function, evaluate objective, repeat until convergence.
 import torch
 
 from actgpr.acquisition import Acquisition
-from actgpr.objective import Objective
+from actgpr.objective import ObjectiveFn
 from actgpr.surrogate import GPyTorchSurrogate
 
 
 class OptimisationRun:
     """Orchestrates the active GPR optimisation loop.
 
-    Coordinates the Objective, Surrogate, and Acquisition components
-    to iteratively find the minimum of the Objective within the search bounds.
+    Coordinates the ObjectiveFn, Surrogate, and Acquisition components
+    to iteratively find the minimum of the ObjectiveFn within the search bounds.
 
     The loop terminates when either the maximum EI score falls below
     ei_threshold (nothing left to gain) or the total number of evaluations
@@ -31,7 +31,7 @@ class OptimisationRun:
 
     def __init__(
         self,
-        objective: Objective,
+        objective: ObjectiveFn,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -44,7 +44,7 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : Objective
+        objective : ObjectiveFn
             The objective function to minimise.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.

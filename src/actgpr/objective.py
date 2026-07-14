@@ -6,7 +6,7 @@ from typing import Callable
 DEFAULT_FUNC = lambda x: x**2
 
 
-class Objective:
+class ObjectiveFn:
     """Objective function for active GPR optimisation.
 
     This class represents the real-valued scalar function being optimised.
@@ -15,7 +15,7 @@ class Objective:
     """
 
     def __init__(self, func: Callable[[float], float] | None = None) -> None:
-        """Initialize the Objective.
+        """Initialize the ObjectiveFn.
 
         Parameters
         ----------
@@ -68,7 +68,7 @@ class Objective:
         return tuple(results)
 
     def __repr__(self) -> str:
-        """Return a concise human-readable summary of the Objective."""
+        """Return a concise human-readable summary of the ObjectiveFn."""
         if self.func is DEFAULT_FUNC:
             func_desc = "x^2"
         elif hasattr(self.func, "__name__") and self.func.__name__ != "<lambda>":
@@ -76,4 +76,4 @@ class Objective:
         else:
             func_desc = "custom_function"
 
-        return f"Objective(function={func_desc})"
+        return f"ObjectiveFn(function={func_desc})"

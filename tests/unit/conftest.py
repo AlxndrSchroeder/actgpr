@@ -5,16 +5,16 @@ import math
 import pytest
 import torch
 
-from actgpr.objective import Objective
+from actgpr.objective import ObjectiveFn
 from actgpr.surrogate import GPyTorchSurrogate
 
 SEED = 42
 
 
 @pytest.fixture()
-def objective() -> Objective:
-    """Return a fresh Objective instance."""
-    return Objective()
+def objective() -> ObjectiveFn:
+    """Return a fresh ObjectiveFn instance."""
+    return ObjectiveFn()
 
 
 @pytest.fixture()
