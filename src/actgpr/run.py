@@ -185,15 +185,9 @@ class OptimisationRun:
             # 4. Evaluate objective at the next point
             new_y = self.objective.evaluate(next_point)[0]
 
-            # 5. Append to training data
-            self.train_x = torch.cat(
-                [self.train_x, torch.tensor([next_point], dtype=self.train_x.dtype)]
-            )
-            self.train_y = torch.cat(
-                [self.train_y, torch.tensor([new_y], dtype=self.train_y.dtype)]
-            )
-
-            # 6. Accumulate per-iteration results
+            # 5. Accumulate per-iteration results
+            # Snapshot train_x/train_y BEFORE appending the new point so the
+            # next_point marker is not also shown as a training data point.
             iteration_data: dict = {
                 "iteration": n_iterations,
                 "next_point": next_point,
@@ -215,6 +209,14 @@ class OptimisationRun:
                 )
 
             self._results.append(iteration_data)
+
+            # 6. Append to training data (after snapshot)
+            self.train_x = torch.cat(
+                [self.train_x, torch.tensor([next_point], dtype=self.train_x.dtype)]
+            )
+            self.train_y = torch.cat(
+                [self.train_y, torch.tensor([new_y], dtype=self.train_y.dtype)]
+            )
 
         if not converged:
             print(
