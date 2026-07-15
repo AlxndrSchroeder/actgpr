@@ -4,10 +4,13 @@ Orchestrates the active learning loop: fit surrogate, maximise acquisition
 function, evaluate objective, repeat until convergence.
 """
 
+import matplotlib.pyplot as plt
 import torch
+from matplotlib.widgets import Slider
 
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import ObjectiveFn
+from actgpr.plotting import plot_iteration_snapshot
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -25,6 +28,8 @@ class OptimisationRun:
     --------------
     run()
         Execute the optimisation loop and return the results.
+    plot_iterations()
+        Open an interactive matplotlib slider to browse GP snapshots per iteration.
     """
 
     # TODO: add from_config() classmethod to construct from config.json
@@ -40,6 +45,7 @@ class OptimisationRun:
         n_candidates: int = 500,
         training_iter: int = 50,
         noise: float = 1e-4,
+        store_snapshots: bool = False,
     ) -> None:
         """Initialize the OptimisationRun.
 
@@ -68,6 +74,10 @@ class OptimisationRun:
         noise : float, optional
             Initial observation noise variance for the GP likelihood,
             by default 1e-4.
+        store_snapshots : bool, optional
+            If True, each iteration stores a snapshot of the GP predictions
+            and EI scores for later interactive plotting via plot_iterations(),
+            by default False.
 
         Raises
         ------
@@ -92,6 +102,7 @@ class OptimisationRun:
         self.search_bounds = search_bounds
         self.training_iter = training_iter
         self.noise = noise
+        self.store_snapshots = store_snapshots
         self.max_evaluations = max_evaluations
         self.ei_threshold = ei_threshold
 
@@ -183,15 +194,27 @@ class OptimisationRun:
             )
 
             # 6. Accumulate per-iteration results
-            self._results.append(
-                {
-                    "iteration": n_iterations,
-                    "next_point": next_point,
-                    "new_y": new_y,
-                    "current_best": current_best,
-                    "max_ei": max_ei,
-                }
-            )
+            iteration_data: dict = {
+                "iteration": n_iterations,
+                "next_point": next_point,
+                "new_y": new_y,
+                "current_best": current_best,
+                "max_ei": max_ei,
+            }
+
+            if self.store_snapshots:
+                iteration_data.update(
+                    {
+                        "candidates": self._acq.candidates.clone(),
+                        "f_mean": self._acq.f_mean.clone(),
+                        "f_var": self._acq.f_var.clone(),
+                        "ei_scores": self._acq.ei_scores.clone(),
+                        "train_x": self.train_x.clone(),
+                        "train_y": self.train_y.clone(),
+                    }
+                )
+
+            self._results.append(iteration_data)
 
         if not converged:
             print(
@@ -208,6 +231,52 @@ class OptimisationRun:
             "n_iterations": n_iterations,
             "converged": converged,
         }
+
+    def plot_iterations(self) -> None:
+        """Open an interactive matplotlib figure to browse iterations.
+
+        Creates a figure with two subplots (GP predictions on top,
+        EI landscape on bottom) and a slider to scrub through iterations.
+
+        Raises
+        ------
+        RuntimeError
+            If store_snapshots was False or no snapshots were recorded.
+        """
+        snapshots = [r for r in self._results if "candidates" in r]
+        if not snapshots:
+            raise RuntimeError(
+                "No snapshots available. Set store_snapshots=True before calling run()."
+            )
+
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
+        plt.subplots_adjust(bottom=0.18, hspace=0.35)
+
+        # Draw initial state
+        plot_iteration_snapshot(snapshots[0], (gp_ax, ei_ax))
+
+        # Slider axis sits below both subplots
+        slider_ax = fig.add_axes([0.15, 0.04, 0.7, 0.04])
+        slider = Slider(
+            slider_ax,
+            "Iteration",
+            valmin=1,
+            valmax=len(snapshots),
+            valinit=1,
+            valstep=1,
+        )
+
+        def _update(val: float) -> None:
+            """Redraw both subplots for the selected iteration."""
+            idx = int(val) - 1
+            gp_ax.cla()
+            ei_ax.cla()
+            plot_iteration_snapshot(snapshots[idx], (gp_ax, ei_ax))
+            fig.canvas.draw_idle()
+
+        slider.on_changed(_update)
+
+        plt.show()
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the OptimisationRun."""
