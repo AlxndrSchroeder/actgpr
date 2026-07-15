@@ -39,6 +39,7 @@ class OptimisationRun:
         ei_threshold: float,
         n_candidates: int = 500,
         training_iter: int = 50,
+        noise: float = 1e-4,
     ) -> None:
         """Initialize the OptimisationRun.
 
@@ -64,6 +65,9 @@ class OptimisationRun:
         training_iter : int, optional
             Number of hyperparameter optimisation iterations per surrogate fit,
             by default 50.
+        noise : float, optional
+            Initial observation noise variance for the GP likelihood,
+            by default 1e-4.
 
         Raises
         ------
@@ -87,6 +91,7 @@ class OptimisationRun:
         self.surrogate = surrogate
         self.search_bounds = search_bounds
         self.training_iter = training_iter
+        self.noise = noise
         self.max_evaluations = max_evaluations
         self.ei_threshold = ei_threshold
 
@@ -139,7 +144,10 @@ class OptimisationRun:
             # TODO: consider get_fantasy_model for faster updates
             #       without hyperparameter re-tuning
             self.surrogate.fit_and_train(
-                self.train_x, self.train_y, training_iter=self.training_iter
+                self.train_x,
+                self.train_y,
+                training_iter=self.training_iter,
+                noise=self.noise,
             )
 
             # 2. Compute current best and find the next input point
