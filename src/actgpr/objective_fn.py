@@ -70,6 +70,9 @@ class ObjectiveFn:
                     f"Error evaluating objective function at index {i} with value {value}: {exc}"
                 ) from exc
 
+        assert len(results) == len(
+            args
+        ), f"Expected {len(args)} outputs, got {len(results)}"
         return tuple(results)
 
     def __repr__(self) -> str:

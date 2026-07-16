@@ -59,6 +59,11 @@ def plot_gp(
     tuple[Figure, Axes]
         The figure and axes used for the plot.
     """
+    assert f_mean.shape == f_var.shape == candidates.shape, (
+        f"Shape mismatch: candidates={candidates.shape}, "
+        f"f_mean={f_mean.shape}, f_var={f_var.shape}"
+    )
+
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
     else:
