@@ -6,10 +6,15 @@ function, evaluate objective, repeat until convergence.
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.widgets import Slider
 
+from actgpr import mrr
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import ObjectiveFn
 from actgpr.plotting import plot_iteration_snapshot
@@ -55,6 +60,7 @@ class OptimisationRun:
         n_candidates: int = 500,
         noise: float = 1e-4,
         store_snapshots: bool = False,
+        run_dir: Path | str | None = None,
         *,
         _train_hyperparameters: bool = True,
         _training_iter: int = 50,
@@ -121,6 +127,7 @@ class OptimisationRun:
         self.store_snapshots = store_snapshots
         self.max_evaluations = max_evaluations
         self.ei_threshold = ei_threshold
+        self._run_dir = Path(run_dir) if run_dir is not None else None
 
         # Private fit-mode configuration — set by classmethods
         self._train_hyperparameters = _train_hyperparameters
@@ -141,7 +148,6 @@ class OptimisationRun:
         self._acq = Acquisition(surrogate, search_bounds, n_candidates)
 
         # Deferred-write accumulator for per-iteration data
-        # TODO: add MRR artifact writing (config.json, meta.json, run.log, results.h5)
         self._results: list[dict] = []
 
     @classmethod
@@ -157,6 +163,7 @@ class OptimisationRun:
         training_iter: int = 50,
         noise: float = 1e-4,
         store_snapshots: bool = False,
+        run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun that optimises GP hyperparameters.
 
@@ -203,6 +210,7 @@ class OptimisationRun:
             n_candidates=n_candidates,
             noise=noise,
             store_snapshots=store_snapshots,
+            run_dir=run_dir,
             _train_hyperparameters=True,
             _training_iter=training_iter,
         )
@@ -221,6 +229,7 @@ class OptimisationRun:
         outputscale: float = 1.0,
         noise: float = 1e-4,
         store_snapshots: bool = False,
+        run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun with fixed GP hyperparameters.
 
@@ -267,6 +276,7 @@ class OptimisationRun:
             n_candidates=n_candidates,
             noise=noise,
             store_snapshots=store_snapshots,
+            run_dir=run_dir,
             _train_hyperparameters=False,
             _lengthscale=lengthscale,
             _outputscale=outputscale,
@@ -289,6 +299,28 @@ class OptimisationRun:
                 outputscale=self._outputscale,
                 noise=self.noise,
             )
+
+    def _config_dict(self) -> dict[str, object]:
+        """Return all configuration parameters for MRR recording."""
+        return {
+            "fit_mode": "training" if self._train_hyperparameters else "notraining",
+            "search_bounds": list(self.search_bounds),
+            "initial_train_x": self.train_x.tolist(),
+            "max_evaluations": self.max_evaluations,
+            "ei_threshold": self.ei_threshold,
+            "n_candidates": self._acq.n_candidates,
+            "noise": self.noise,
+            "training_iter": (
+                self._training_iter if self._train_hyperparameters else None
+            ),
+            "lengthscale": (
+                self._lengthscale if not self._train_hyperparameters else None
+            ),
+            "outputscale": (
+                self._outputscale if not self._train_hyperparameters else None
+            ),
+            "store_snapshots": self.store_snapshots,
+        }
 
     # TODO: max_evaluations validation may need revisiting — should it allow
     #       fewer evaluations than initial points?
@@ -313,14 +345,41 @@ class OptimisationRun:
         stop_reason = "max_evaluations"
         n_iterations = 0
 
+        # ── MRR: setup (only if run_dir provided) ──
+        logger = logging.getLogger("actgpr")
+        file_handler = None
+        actual_run_dir = None
+
+        if self._run_dir is not None:
+            actual_run_dir = mrr.create_run_dir(
+                self._run_dir,
+                fit_mode="training" if self._train_hyperparameters else "notraining",
+                training_iter=(
+                    self._training_iter if self._train_hyperparameters else None
+                ),
+                ei_threshold=self.ei_threshold,
+                max_evaluations=self.max_evaluations,
+                noise=self.noise,
+                lengthscale=(
+                    self._lengthscale if not self._train_hyperparameters else None
+                ),
+                outputscale=(
+                    self._outputscale if not self._train_hyperparameters else None
+                ),
+            )
+            mrr.write_config(actual_run_dir, self._config_dict())
+            mrr.write_manifest(actual_run_dir)
+            file_handler = mrr.setup_file_logger(actual_run_dir)
+
+        run_start = datetime.now(timezone.utc)
+
         fit_mode = "training" if self._train_hyperparameters else "fixed"
-        print(
+        logger.info(
             f"Starting optimisation ({fit_mode}): "
             f"{self.train_x.numel()} initial points, "
             f"max_evaluations={self.max_evaluations}, "
             f"ei_threshold={self.ei_threshold}"
         )
-        # TODO: replace print with Python logging module
 
         while self.train_x.numel() < self.max_evaluations:
             n_iterations += 1
@@ -335,8 +394,8 @@ class OptimisationRun:
             next_point = self._acq.find_next_input_point(current_best)
             max_ei = self._acq.ei_scores.max().item()
 
-            print(
-                f"  Iteration {n_iterations} | "
+            logger.info(
+                f"Iteration {n_iterations} | "
                 f"current_best: {current_best:.4f} | "
                 f"next_point: {next_point:.4f} | "
                 f"max_ei: {max_ei:.6f}"
@@ -344,7 +403,7 @@ class OptimisationRun:
 
             # 3. Check EI convergence before evaluating the new point
             if max_ei < self.ei_threshold:
-                print(
+                logger.info(
                     f"Converged after {n_iterations} iterations "
                     f"(max EI {max_ei:.6f} < ei_threshold {self.ei_threshold})"
                 )
@@ -388,15 +447,46 @@ class OptimisationRun:
             )
 
         if stop_reason == "max_evaluations":
-            print(
+            logger.info(
                 f"Stopped after {n_iterations} iterations "
                 f"(reached max_evaluations={self.max_evaluations})"
             )
 
         best_idx = torch.argmin(self.train_y)
+        best_x = self.train_x[best_idx].item()
+        best_y = self.train_y[best_idx].item()
+
+        run_end = datetime.now(timezone.utc)
+
+        # ── MRR: finalize (only if run_dir provided) ──
+        if self._run_dir is not None and actual_run_dir is not None:
+            mrr.save_hdf5(
+                actual_run_dir,
+                results=self._results,
+                config=self._config_dict(),
+                store_snapshots=self.store_snapshots,
+                final_train_x=self.train_x,
+                final_train_y=self.train_y,
+                best_x=best_x,
+                best_y=best_y,
+                stop_reason=stop_reason,
+                n_iterations=n_iterations,
+            )
+            mrr.write_meta(
+                actual_run_dir,
+                run_start=run_start,
+                run_end=run_end,
+                best_x=best_x,
+                best_y=best_y,
+                n_iterations=n_iterations,
+                stop_reason=stop_reason,
+            )
+            if file_handler is not None:
+                logger.removeHandler(file_handler)
+
         return {
-            "best_x": self.train_x[best_idx].item(),
-            "best_y": self.train_y[best_idx].item(),
+            "best_x": best_x,
+            "best_y": best_y,
             "train_x": self.train_x,
             "train_y": self.train_y,
             "n_iterations": n_iterations,
