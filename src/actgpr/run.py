@@ -109,6 +109,10 @@ class OptimisationRun:
                 f"max_evaluations ({max_evaluations}) must be greater than the "
                 f"number of initial points ({self.train_x.numel()})."
             )
+        assert (
+            search_bounds[0] < search_bounds[1]
+        ), f"search_bounds lo ({search_bounds[0]}) must be < hi ({search_bounds[1]})"
+        assert ei_threshold > 0, f"ei_threshold must be positive, got {ei_threshold}"
 
         self.objective = objective
         self.surrogate = surrogate
@@ -127,6 +131,10 @@ class OptimisationRun:
         # Evaluate the objective at initial points to get train_y
         self.train_y = torch.tensor(
             self.objective.evaluate(*self.train_x.tolist()), dtype=self.train_x.dtype
+        )
+        assert self.train_x.numel() == self.train_y.numel(), (
+            f"Objective returned {self.train_y.numel()} outputs for "
+            f"{self.train_x.numel()} inputs"
         )
 
         # Create Acquisition once — it holds a reference to the surrogate
