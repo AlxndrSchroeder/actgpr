@@ -49,6 +49,11 @@ class ExactGPModel(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
+    def __repr__(self) -> str:
+        """Return a concise human-readable summary of the ExactGPModel."""
+        n = self.train_inputs[0].numel() if self.train_inputs else 0
+        return f"ExactGPModel(n_points={n})"
+
 
 class GPyTorchSurrogate:
     """A Gaussian Process surrogate model backend wrapper using GPyTorch.
@@ -63,6 +68,12 @@ class GPyTorchSurrogate:
         self.likelihood: gpytorch.likelihoods.GaussianLikelihood | None = None
         self.train_x: torch.Tensor | None = None
         self.train_y: torch.Tensor | None = None
+
+    def __repr__(self) -> str:
+        """Return a concise human-readable summary of the GPyTorchSurrogate."""
+        n = self.train_x.numel() if self.train_x is not None else 0
+        fitted = self.model is not None
+        return f"GPyTorchSurrogate(n_points={n}, fitted={fitted})"
 
     def _setup_model(
         self,
