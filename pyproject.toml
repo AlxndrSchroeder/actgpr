@@ -1,17 +1,25 @@
-[tool.poetry]
+[project]
 name = "actgpr"
 version = "0.1.0"
-description = "Active GPR Optimisation package"
-authors = ["Alexander Schroder"]
+description = "Active GPR Optimisation — finds the minimum of an expensive scalar objective via a Gaussian Process surrogate and Expected Improvement"
+authors = [{name = "Alexander Schroder"}]
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
-packages = [{include = "actgpr", from = "src"}]
+keywords = ["gaussian-process", "bayesian-optimisation", "active-learning", "surrogate-model", "expected-improvement"]
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "torch (>=2.12.0,<3.0.0)",
+    "gpytorch (>=1.15.2,<2.0.0)",
+    "matplotlib (>=3.11.0,<4.0.0)",
+    "h5py (>=3.16.0,<4.0.0)",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.13,<3.15"
-torch = "^2.12.0"
-gpytorch = "^1.15.2"
-matplotlib = "^3.11.0"
-h5py = "^3.16.0"
+[project.urls]
+Repository = "https://github.com/LxdrScr/actgpr"
+
+[tool.poetry]
+packages = [{include = "actgpr", from = "src"}]
 
 [build-system]
 requires = ["poetry-core>=2.0.0"]
@@ -28,4 +36,3 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
