@@ -230,7 +230,8 @@ def plot_iteration_snapshot(
     snapshot : dict
         A snapshot dictionary containing keys: ``candidates``, ``f_mean``,
         ``f_var``, ``train_x``, ``train_y``, ``ei_scores``, ``next_point``,
-        ``iteration``, ``current_best``, ``max_ei``.
+        ``iteration``, ``current_best``, ``max_ei``, ``prediction_error``,
+        ``improvement``.
     axes : tuple[Axes, Axes]
         A pair of axes (gp_ax, ei_ax) to draw on.
     """
@@ -248,7 +249,9 @@ def plot_iteration_snapshot(
     )
     gp_ax.set_title(
         f"Iteration {snapshot['iteration']} | "
-        f"current_best: {snapshot['current_best']:.4f}"
+        f"best: {snapshot['current_best']:.4f} | "
+        f"pred_error: {snapshot['prediction_error']:.4f} | "
+        f"improvement: {snapshot['improvement']:.4f}"
     )
 
     plot_acquisition(

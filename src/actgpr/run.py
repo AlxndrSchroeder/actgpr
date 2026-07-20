@@ -381,6 +381,8 @@ class OptimisationRun:
             f"ei_threshold={self.ei_threshold}"
         )
 
+        previous_best = self.train_y.min().item()
+
         while self.train_x.numel() < self.max_evaluations:
             n_iterations += 1
 
@@ -394,13 +396,6 @@ class OptimisationRun:
             next_point = self._acq.find_next_input_point(current_best)
             max_ei = self._acq.ei_scores.max().item()
 
-            logger.info(
-                f"Iteration {n_iterations} | "
-                f"current_best: {current_best:.4f} | "
-                f"next_point: {next_point:.4f} | "
-                f"max_ei: {max_ei:.6f}"
-            )
-
             # 3. Check EI convergence before evaluating the new point
             if max_ei < self.ei_threshold:
                 logger.info(
@@ -413,7 +408,23 @@ class OptimisationRun:
             # 4. Evaluate objective at the next point
             new_y = self.objective.evaluate(next_point)[0]
 
-            # 5. Accumulate per-iteration results
+            # 5. Validation metrics
+            best_idx = torch.argmax(self._acq.ei_scores)
+            predicted_y = self._acq.f_mean[best_idx].item()
+            prediction_error = predicted_y - new_y
+            improvement = previous_best - current_best
+            previous_best = current_best
+
+            logger.info(
+                f"Iteration {n_iterations} | "
+                f"current_best: {current_best:.4f} | "
+                f"next_point: {next_point:.4f} | "
+                f"max_ei: {max_ei:.6f} | "
+                f"pred_error: {prediction_error:.4f} | "
+                f"improvement: {improvement:.4f}"
+            )
+
+            # 6. Accumulate per-iteration results
             # Snapshot train_x/train_y BEFORE appending the new point so the
             # next_point marker is not also shown as a training data point.
             iteration_data: dict = {
@@ -422,6 +433,8 @@ class OptimisationRun:
                 "new_y": new_y,
                 "current_best": current_best,
                 "max_ei": max_ei,
+                "prediction_error": prediction_error,
+                "improvement": improvement,
             }
 
             if self.store_snapshots:

@@ -152,6 +152,8 @@ class TestSaveHdf5:
                 "new_y": 0.2,
                 "current_best": 0.2,
                 "max_ei": 0.1,
+                "prediction_error": 0.05,
+                "improvement": 0.0,
             }
         ]
         return config, results

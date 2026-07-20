@@ -179,6 +179,8 @@ def save_hdf5(
             grp.attrs["new_y"] = float(res["new_y"])
             grp.attrs["current_best"] = float(res["current_best"])
             grp.attrs["max_ei"] = float(res["max_ei"])
+            grp.attrs["prediction_error"] = float(res["prediction_error"])
+            grp.attrs["improvement"] = float(res["improvement"])
 
             # Tensor datasets (only if stored)
             if store_snapshots:
