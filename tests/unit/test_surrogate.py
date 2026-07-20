@@ -231,6 +231,9 @@ class TestGPyTorchSurrogatePredict:
 
         assert torch.allclose(preds["f_covar"], preds["f_covar"].T, atol=1e-5)
 
+    # Predicting at exactly the training inputs is the point of this test;
+    # gpytorch's "did you forget model.train()?" heuristic is a false positive.
+    @pytest.mark.filterwarnings("ignore::gpytorch.utils.warnings.GPInputWarning")
     def test_predict_variance_low_at_training_points(
         self,
         training_data: tuple[torch.Tensor, torch.Tensor],

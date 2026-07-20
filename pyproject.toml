@@ -36,3 +36,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Any warning not explicitly allowed below fails the test suite.
+    "error",
+    # Upstream: gpytorch still uses torch.jit internally; torch >= 2.12
+    # deprecates it. Remove once gpytorch migrates off torch.jit.
+    "ignore:`torch.jit.script` is deprecated:DeprecationWarning",
+]
