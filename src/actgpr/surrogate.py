@@ -3,6 +3,10 @@
 import torch
 import gpytorch
 
+# Jitter added to the covariance diagonal during Cholesky decomposition to
+# keep the matrix numerically positive definite (float64 throughout).
+CHOLESKY_JITTER = 1e-4
+
 
 class ExactGPModel(gpytorch.models.ExactGP):
     """An exact Gaussian Process model with Constant mean and scaled RBF kernel.
@@ -143,7 +147,7 @@ class GPyTorchSurrogate:
         for _ in range(training_iter):
             optimizer.zero_grad()
             output = self.model(self.train_x)
-            with gpytorch.settings.cholesky_jitter(1e-4):
+            with gpytorch.settings.cholesky_jitter(CHOLESKY_JITTER):
                 loss = -mll(output, self.train_y)
             loss.backward()
             optimizer.step()
@@ -190,6 +194,7 @@ class GPyTorchSurrogate:
     def predict(
         self,
         test_x: torch.Tensor,
+        n_samples: int = 0,
     ) -> dict[str, torch.Tensor | gpytorch.distributions.MultivariateNormal]:
         """Predict the posterior distributions at test points.
 
@@ -197,6 +202,10 @@ class GPyTorchSurrogate:
         ----------
         test_x : torch.Tensor of shape (m,)
             The test input points to predict at.
+        n_samples : int, optional
+            Number of samples to draw from the latent function's predictive
+            posterior, by default 0. Sampling is skipped entirely when 0,
+            which keeps predictions cheap inside the optimisation loop.
 
         Returns
         -------
@@ -212,8 +221,9 @@ class GPyTorchSurrogate:
                 Predicted posterior variance of the latent function.
             - "f_covar": torch.Tensor of shape (m, m)
                 Predicted posterior covariance matrix.
-            - "f_samples": torch.Tensor of shape (1000, m)
-                1000 samples drawn from the latent function's predictive posterior.
+            - "f_samples": torch.Tensor of shape (n_samples, m)
+                Samples drawn from the latent function's predictive posterior.
+                Only present when n_samples > 0.
 
         Raises
         ------
@@ -228,7 +238,7 @@ class GPyTorchSurrogate:
         self.likelihood.eval()
 
         with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.cholesky_jitter(
-            1e-4
+            CHOLESKY_JITTER
         ):
             f_preds = self.model(test_x_double)
             observed_pred = self.likelihood(f_preds)
@@ -236,22 +246,30 @@ class GPyTorchSurrogate:
             f_mean = f_preds.mean
             f_var = f_preds.variance
             f_covar = f_preds.covariance_matrix
-            f_samples = f_preds.sample(sample_shape=torch.Size([1000]))
+            f_samples = (
+                f_preds.sample(sample_shape=torch.Size([n_samples]))
+                if n_samples > 0
+                else None
+            )
 
         # Scientific Invariants / Asserts
         assert torch.all(torch.isfinite(f_mean)), "f_mean contains non-finite values"
         assert torch.all(f_var >= 0), "f_var contains negative variance values"
         assert torch.all(torch.isfinite(f_var)), "f_var contains non-finite values"
         assert torch.all(torch.isfinite(f_covar)), "f_covar contains non-finite values"
-        assert torch.all(
-            torch.isfinite(f_samples)
-        ), "f_samples contains non-finite values"
 
-        return {
+        preds: dict[str, torch.Tensor | gpytorch.distributions.MultivariateNormal] = {
             "f_preds": f_preds,
             "observed_pred": observed_pred,
             "f_mean": f_mean,
             "f_var": f_var,
             "f_covar": f_covar,
-            "f_samples": f_samples,
         }
+
+        if f_samples is not None:
+            assert torch.all(
+                torch.isfinite(f_samples)
+            ), "f_samples contains non-finite values"
+            preds["f_samples"] = f_samples
+
+        return preds

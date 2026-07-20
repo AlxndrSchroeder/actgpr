@@ -173,9 +173,18 @@ class TestGPyTorchSurrogatePredict:
             "f_mean",
             "f_var",
             "f_covar",
-            "f_samples",
         }
         assert set(preds.keys()) == expected_keys
+
+    def test_predict_skips_sampling_by_default(
+        self,
+        fitted_model: GPyTorchSurrogate,
+    ) -> None:
+        """Test that f_samples is absent when n_samples is not requested."""
+        test_x = torch.linspace(0, 1, 10)
+        preds = fitted_model.predict(test_x)
+
+        assert "f_samples" not in preds
 
     def test_predict_output_shapes(
         self,
@@ -183,13 +192,14 @@ class TestGPyTorchSurrogatePredict:
     ) -> None:
         """Test that prediction tensor shapes match the number of test points."""
         n_test = 15
+        n_samples = 25
         test_x = torch.linspace(0, 1, n_test)
-        preds = fitted_model.predict(test_x)
+        preds = fitted_model.predict(test_x, n_samples=n_samples)
 
         assert preds["f_mean"].shape == (n_test,)
         assert preds["f_var"].shape == (n_test,)
         assert preds["f_covar"].shape == (n_test, n_test)
-        assert preds["f_samples"].shape == (1000, n_test)
+        assert preds["f_samples"].shape == (n_samples, n_test)
 
     def test_predict_f_mean_is_finite(
         self,
