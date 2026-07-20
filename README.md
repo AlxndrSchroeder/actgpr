@@ -1,6 +1,6 @@
 # actgpr
 
-**Active GPR (Gaussian Process Regression) Optimisation** — a Python package that finds the minimum of an expensive-to-evaluate scalar function by iteratively fitting a Gaussian Process surrogate and using Expected Improvement to pick the most informative next evaluation point.
+**Active GPR (Gaussian Process Regression) Optimisation** — a Python package that finds the minimum of a scalar blackbox function by iteratively fitting a Gaussian Process surrogate and using Expected Improvement to pick the most informative next evaluation point. Each evaluation of the blackbox — a simulation, an experiment, a measurement — may be expensive, so the surrogate keeps the number of evaluations small.
 
 ## How it works
 
@@ -24,13 +24,30 @@ poetry install
 
 ## Quick start
 
+The usage pattern:
+
+1. **Write an Objective wrapper for your blackbox function** — `ObjectiveFn` turns any `Callable[[float], float]` into an Objective with `objective.evaluate(*x) -> tuple[float, ...]`.
+2. **Choose the search interval** — `search_bounds` is the closed interval `[lo, hi]` in which the algorithm searches for the minimum.
+3. **Hand both to an `OptimisationRun`** and call `run()`.
+
 ```python
 from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
 
+
+# 1. Your blackbox function. Here an analytic stand-in for the tutorial —
+#    in practice it might run a simulation or trigger an experiment.
+def my_blackbox(x: float) -> float:
+    return (x - 1) ** 2
+
+
+# 2. Wrap it in an Objective: objective.evaluate(*x) -> tuple[float, ...]
+objective = ObjectiveFn(my_blackbox)
+
+# 3. Configure and execute the optimisation run
 run = OptimisationRun.with_training(
-    objective=ObjectiveFn(lambda x: (x - 1) ** 2),
+    objective=objective,
     surrogate=GPyTorchSurrogate(),
-    search_bounds=(-3.0, 5.0),
+    search_bounds=(-3.0, 5.0),   # interval in which the minimum is searched
     initial_train_x=[-2.0, 4.0],
     max_evaluations=20,
     ei_threshold=0.001,
@@ -77,7 +94,7 @@ When `run_dir` is given, each run creates a timestamped **run directory** (named
 
 | Term | Meaning |
 |---|---|
-| **Objective** | The real-valued scalar function being minimised. Wrapped by `ObjectiveFn`; defaults to `f(x) = x²`. |
+| **Objective** | The real-valued scalar function being minimised — your blackbox function, wrapped by `ObjectiveFn`. Defaults to `f(x) = x²` (handy for tutorials and tests). |
 | **Analytic objective** | An Objective computed by a mathematical formula (e.g. `x²`) — used for development and testing. |
 | **Experiment objective** | An Objective whose output comes from a real-world measurement or instrument (planned). |
 | **`train_x`** (or `x`) | The input points passed to the Objective. |
