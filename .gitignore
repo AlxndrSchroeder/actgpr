@@ -48,7 +48,7 @@ results/
 .env
 
 # Project-internal docs (not for the public repo)
-project.md
+docs/project.md
 CONTEXT.md
 
 # Scratch scripts
