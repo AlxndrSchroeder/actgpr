@@ -35,7 +35,7 @@ class Acquisition:
         self,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
-        n_candidates: int = 1000,
+        n_candidates: int = 500,
     ) -> None:
         """Initialize the Acquisition function.
 
@@ -46,7 +46,8 @@ class Acquisition:
         search_bounds : tuple[float, float]
             The closed interval (lo, hi) within which candidates are generated.
         n_candidates : int, optional
-            Number of evenly spaced candidate points to evaluate, by default 1000.
+            Number of evenly spaced candidate points to evaluate, by default
+            500 (matches the OptimisationRun default).
         """
         self.surrogate = surrogate
         self.search_bounds = search_bounds

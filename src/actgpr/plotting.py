@@ -19,6 +19,10 @@ from matplotlib.figure import Figure
 
 from actgpr.surrogate import GPyTorchSurrogate
 
+# Half-width of the shaded confidence band in standard deviations;
+# ±2σ covers ≈95% of a Gaussian posterior.
+CI_STD_FACTOR = 2.0
+
 
 def plot_gp(
     candidates: torch.Tensor,
@@ -71,8 +75,8 @@ def plot_gp(
 
     with torch.no_grad():
         f_std = torch.sqrt(f_var)
-        lower = f_mean - 2 * f_std
-        upper = f_mean + 2 * f_std
+        lower = f_mean - CI_STD_FACTOR * f_std
+        upper = f_mean + CI_STD_FACTOR * f_std
 
         ax.plot(
             train_x.numpy(),
