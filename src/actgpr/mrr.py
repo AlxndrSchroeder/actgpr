@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import logging
 import platform
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -101,8 +102,6 @@ def write_meta(
 ) -> None:
     """Write environment and output summary to meta.json."""
     try:
-        import subprocess
-
         git_commit = (
             subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
