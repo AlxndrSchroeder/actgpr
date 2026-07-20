@@ -211,19 +211,20 @@ class GPyTorchSurrogate:
         -------
         dict[str, torch.Tensor | gpytorch.distributions.MultivariateNormal]
             A dictionary containing prediction components:
-            - "f_preds": gpytorch.distributions.MultivariateNormal
-                Predictive distribution of the latent function f(test_x).
-            - "observed_pred": gpytorch.distributions.MultivariateNormal
-                Predictive distribution of observed targets y(test_x) = f(test_x) + noise.
-            - "f_mean": torch.Tensor of shape (m,)
-                Predicted posterior mean of the latent function.
-            - "f_var": torch.Tensor of shape (m,)
-                Predicted posterior variance of the latent function.
-            - "f_covar": torch.Tensor of shape (m, m)
-                Predicted posterior covariance matrix.
-            - "f_samples": torch.Tensor of shape (n_samples, m)
-                Samples drawn from the latent function's predictive posterior.
-                Only present when n_samples > 0.
+
+            - "f_preds": predictive distribution (MultivariateNormal) of the
+              latent function f(test_x).
+            - "observed_pred": predictive distribution (MultivariateNormal) of
+              observed targets y(test_x) = f(test_x) + noise.
+            - "f_mean": predicted posterior mean of the latent function,
+              torch.Tensor of shape (m,).
+            - "f_var": predicted posterior variance of the latent function,
+              torch.Tensor of shape (m,).
+            - "f_covar": predicted posterior covariance matrix,
+              torch.Tensor of shape (m, m).
+            - "f_samples": samples drawn from the latent function's predictive
+              posterior, torch.Tensor of shape (n_samples, m). Only present
+              when n_samples > 0.
 
         Raises
         ------

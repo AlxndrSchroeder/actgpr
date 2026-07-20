@@ -338,10 +338,11 @@ class OptimisationRun:
         -------
         dict
             A dictionary containing the optimisation results:
-            - "best_x": float — the input point with the lowest objective value.
-            - "best_y": float — the lowest objective value found.
+
+            - "best_x": float — the input point with the lowest Objective value.
+            - "best_y": float — the lowest Objective value found.
             - "train_x": torch.Tensor — all evaluated input points.
-            - "train_y": torch.Tensor — all objective evaluations.
+            - "train_y": torch.Tensor — all Objective outputs.
             - "n_iterations": int — number of loop iterations executed.
             - "stop_reason": str — "ei_threshold" if EI dropped below
               ei_threshold, "max_evaluations" if budget cap was reached.
