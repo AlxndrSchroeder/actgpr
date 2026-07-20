@@ -16,12 +16,19 @@ Acquisition
     Expected Improvement acquisition function.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import ObjectiveFn
 from actgpr.run import OptimisationRun
 from actgpr.surrogate import GPyTorchSurrogate
 
-__version__ = "0.1.0"
+try:
+    # Single source of truth: the version declared in pyproject.toml
+    __version__ = version("actgpr")
+except PackageNotFoundError:
+    # Package is not installed (e.g. source tree without poetry install)
+    __version__ = "0.0.0"
 
 __all__ = [
     "Acquisition",
