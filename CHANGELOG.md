@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README quickstart and new docs tutorial reframed around wrapping a
+  blackbox function in an `ObjectiveFn`
+
 ## [0.1.0] - 2026-07-20
 
 ### Added
