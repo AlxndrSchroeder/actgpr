@@ -264,8 +264,8 @@ class TestOptimisationRunRun:
         logger = logging.getLogger("actgpr")
         n_handlers_before = len(logger.handlers)
 
-        # ObjectiveFn wraps errors from the user function as TypeError
-        with pytest.raises(TypeError, match="objective backend failure"):
+        # Errors from the Objective propagate with their original type
+        with pytest.raises(RuntimeError, match="objective backend failure"):
             run.run()
 
         assert len(logger.handlers) == n_handlers_before

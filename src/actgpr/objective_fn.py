@@ -48,8 +48,14 @@ class ObjectiveFn:
         ValueError
             If no input arguments are provided.
         TypeError
-            If any of the input values cannot be converted to a float, or if
-            the custom function fails to execute on the input.
+            If an input value cannot be converted to a float, or if the
+            Objective returns a non-numeric value.
+
+        Notes
+        -----
+        Exceptions raised *inside* the Objective itself (e.g. a ValueError
+        from a domain error) propagate unchanged so callers can handle the
+        original error type.
         """
         if not args:
             raise ValueError("At least one input argument must be provided.")
@@ -63,11 +69,16 @@ class ObjectiveFn:
                     f"Expected float or int for argument at index {i}, got {type(value).__name__}"
                 ) from exc
 
+            # Errors raised by the Objective itself propagate unchanged —
+            # relabelling them would mask the original error type.
+            result = self.func(float_val)
+
             try:
-                results.append(float(self.func(float_val)))
-            except Exception as exc:
+                results.append(float(result))
+            except (TypeError, ValueError) as exc:
                 raise TypeError(
-                    f"Error evaluating objective function at index {i} with value {value}: {exc}"
+                    f"Objective returned non-numeric value {result!r} "
+                    f"({type(result).__name__}) at index {i}"
                 ) from exc
 
         assert len(results) == len(

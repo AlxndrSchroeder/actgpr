@@ -68,11 +68,25 @@ def test_custom_named_function_repr() -> None:
 
 
 def test_custom_function_error_propagation() -> None:
-    """Test that errors inside custom functions are caught and raised as TypeError."""
+    """Test that errors inside the Objective propagate with their original type."""
 
     def failing_func(x: float) -> float:
         raise ValueError("Something went wrong inside the function")
 
     obj = ObjectiveFn(failing_func)
-    with pytest.raises(TypeError, match="Error evaluating objective function"):
+    with pytest.raises(ValueError, match="Something went wrong"):
+        obj.evaluate(1.0)
+
+
+def test_domain_error_keeps_original_type() -> None:
+    """Test that a ZeroDivisionError from the Objective is not relabelled."""
+    obj = ObjectiveFn(lambda x: 1.0 / x)
+    with pytest.raises(ZeroDivisionError):
+        obj.evaluate(0.0)
+
+
+def test_non_numeric_return_raises_type_error() -> None:
+    """Test that an Objective returning a non-numeric value raises TypeError."""
+    obj = ObjectiveFn(lambda x: "not a number")  # type: ignore[arg-type,return-value]
+    with pytest.raises(TypeError, match="non-numeric value"):
         obj.evaluate(1.0)
