@@ -27,7 +27,7 @@ BASELINE_PATH = Path(__file__).parent / "data" / "quadratic_baseline.csv"
 BASELINE_CONFIG = {
     "search_bounds": (-4.0, 4.0),
     "initial_train_x": [-3.0, 3.0],
-    "max_evaluations": 10,
+    "max_iterations": 10,
     "ei_threshold": 1e-9,
     "n_candidates": 200,
     "lengthscale": 1.0,

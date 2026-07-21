@@ -22,7 +22,7 @@ def simple_run() -> OptimisationRun:
         surrogate=GPyTorchSurrogate(),
         search_bounds=(-3.0, 3.0),
         initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
-        max_evaluations=10,
+        max_iterations=10,
         ei_threshold=0.01,
         n_candidates=100,
         training_iter=20,
@@ -44,9 +44,9 @@ class TestOptimisationRunInit:
         """Test that search bounds are stored correctly."""
         assert simple_run.search_bounds == (-3.0, 3.0)
 
-    def test_stores_max_evaluations(self, simple_run: OptimisationRun) -> None:
-        """Test that max_evaluations is stored correctly."""
-        assert simple_run.max_evaluations == 10
+    def test_stores_max_iterations(self, simple_run: OptimisationRun) -> None:
+        """Test that max_iterations is stored correctly."""
+        assert simple_run.max_iterations == 10
 
     def test_stores_ei_threshold(self, simple_run: OptimisationRun) -> None:
         """Test that ei_threshold is stored correctly."""
@@ -69,7 +69,7 @@ class TestOptimisationRunInit:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=[-2.0, 0.0, 2.0],
-            max_evaluations=10,
+            max_iterations=10,
             ei_threshold=0.01,
         )
         assert run.train_x.numel() == 3
@@ -82,19 +82,19 @@ class TestOptimisationRunInit:
                 surrogate=GPyTorchSurrogate(),
                 search_bounds=(-3.0, 3.0),
                 initial_train_x=torch.tensor([]),
-                max_evaluations=10,
+                max_iterations=10,
                 ei_threshold=0.01,
             )
 
-    def test_raises_on_max_eval_too_small(self) -> None:
-        """Test that ValueError is raised when max_evaluations <= 0."""
+    def test_raises_on_max_iterations_too_small(self) -> None:
+        """Test that ValueError is raised when max_iterations <= 0."""
         with pytest.raises(ValueError, match="must be a positive integer"):
             OptimisationRun(
                 objective=ObjectiveFn(),
                 surrogate=GPyTorchSurrogate(),
                 search_bounds=(-3.0, 3.0),
                 initial_train_x=torch.tensor([-1.0, 0.0, 1.0]),
-                max_evaluations=0,
+                max_iterations=0,
                 ei_threshold=0.01,
             )
 
@@ -106,7 +106,7 @@ class TestOptimisationRunInit:
                 surrogate=GPyTorchSurrogate(),
                 search_bounds=(3.0, -3.0),
                 initial_train_x=torch.tensor([-1.0, 0.0, 1.0]),
-                max_evaluations=10,
+                max_iterations=10,
                 ei_threshold=0.01,
             )
 
@@ -118,7 +118,7 @@ class TestOptimisationRunInit:
                 surrogate=GPyTorchSurrogate(),
                 search_bounds=(-3.0, 3.0),
                 initial_train_x=torch.tensor([-1.0, 0.0, 1.0]),
-                max_evaluations=10,
+                max_iterations=10,
                 ei_threshold=0.0,
             )
 
@@ -134,7 +134,7 @@ class TestOptimisationRunInit:
         assert "OptimisationRun" in r
         assert "fit=training" in r
         assert "bounds=(-3.0, 3.0)" in r
-        assert "max_eval=10" in r
+        assert "max_iter=10" in r
 
 
 class TestOptimisationRunRun:
@@ -188,21 +188,21 @@ class TestOptimisationRunRun:
         result = simple_run.run()
         assert result["train_x"].numel() == result["train_y"].numel()
 
-    def test_respects_max_evaluations(self) -> None:
-        """Test that the loop stops at max_evaluations even without convergence."""
+    def test_respects_max_iterations(self) -> None:
+        """Test that the loop stops at max_iterations even without convergence."""
         run = OptimisationRun.with_training(
             objective=ObjectiveFn(),
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=torch.tensor([-2.0, 2.0]),
-            max_evaluations=5,
-            ei_threshold=1e-20,  # impossibly low — forces max_evaluations stop
+            max_iterations=5,
+            ei_threshold=1e-20,  # impossibly low — forces max_iterations stop
             n_candidates=50,
             training_iter=10,
         )
         result = run.run()
         assert result["n_iterations"] == 5
-        assert result["stop_reason"] == "max_evaluations"
+        assert result["stop_reason"] == "max_iterations"
 
     def test_stop_reason_ei_threshold(self) -> None:
         """Test that stop_reason is 'ei_threshold' when EI drops below threshold."""
@@ -211,7 +211,7 @@ class TestOptimisationRunRun:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
-            max_evaluations=50,
+            max_iterations=50,
             ei_threshold=1.0,  # very high — should stop immediately
             n_candidates=50,
             training_iter=10,
@@ -255,7 +255,7 @@ class TestOptimisationRunRun:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=[-2.0, 2.0],
-            max_evaluations=5,
+            max_iterations=5,
             ei_threshold=1e-12,
             n_candidates=50,
             run_dir=tmp_path,
@@ -284,7 +284,7 @@ class TestOptimisationRunRun:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 5.0),
             initial_train_x=torch.tensor([-2.0, 0.0, 2.0, 4.0]),
-            max_evaluations=20,
+            max_iterations=20,
             ei_threshold=0.01,
             n_candidates=100,
             training_iter=20,
@@ -306,7 +306,7 @@ class TestOptimisationRunSnapshots:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
-            max_evaluations=8,
+            max_iterations=8,
             ei_threshold=0.01,
             n_candidates=50,
             training_iter=10,
@@ -373,7 +373,7 @@ class TestOptimisationRunWithoutTraining:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
-            max_evaluations=8,
+            max_iterations=8,
             ei_threshold=0.01,
             n_candidates=50,
             lengthscale=1.0,

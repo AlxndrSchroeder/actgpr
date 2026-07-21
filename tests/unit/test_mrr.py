@@ -17,7 +17,7 @@ class TestCreateRunDir:
             fit_mode="training",
             training_iter=50,
             ei_threshold=0.001,
-            max_evaluations=20,
+            max_iterations=20,
             noise=1e-4,
             lengthscale=None,
             outputscale=None,
@@ -32,14 +32,14 @@ class TestCreateRunDir:
             fit_mode="training",
             training_iter=50,
             ei_threshold=0.001,
-            max_evaluations=20,
+            max_iterations=20,
             noise=1e-4,
             lengthscale=None,
             outputscale=None,
         )
         assert "training50iter" in run_dir.name
         assert "ei0.001" in run_dir.name
-        assert "eval20" in run_dir.name
+        assert "maxiter20" in run_dir.name
         assert "n0.0001" in run_dir.name
 
     def test_notraining_mode_folder_name(self, tmp_path: Path):
@@ -48,14 +48,14 @@ class TestCreateRunDir:
             fit_mode="notraining",
             training_iter=None,
             ei_threshold=0.01,
-            max_evaluations=15,
+            max_iterations=15,
             noise=2e-4,
             lengthscale=1.5,
             outputscale=0.5,
         )
         assert "notraining" in run_dir.name
         assert "ei0.01" in run_dir.name
-        assert "eval15" in run_dir.name
+        assert "maxiter15" in run_dir.name
         assert "ls1.5" in run_dir.name
         assert "os0.5" in run_dir.name
         assert "n0.0002" in run_dir.name
@@ -131,14 +131,14 @@ class TestWriteMeta:
             best_x=1.23,
             best_y=-0.45,
             n_iterations=10,
-            stop_reason="max_evaluations",
+            stop_reason="max_iterations",
         )
 
         loaded = json.loads((tmp_path / "meta.json").read_text())
         assert loaded["output_summary"]["best_x"] == 1.23
         assert loaded["output_summary"]["best_y"] == -0.45
         assert loaded["output_summary"]["n_iterations"] == 10
-        assert loaded["output_summary"]["stop_reason"] == "max_evaluations"
+        assert loaded["output_summary"]["stop_reason"] == "max_iterations"
 
 
 class TestSaveHdf5:
@@ -169,7 +169,7 @@ class TestSaveHdf5:
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=0.5,
             best_y=0.2,
-            stop_reason="max_evaluations",
+            stop_reason="max_iterations",
             n_iterations=1,
         )
 
@@ -196,7 +196,7 @@ class TestSaveHdf5:
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=0.5,
             best_y=0.2,
-            stop_reason="max_evaluations",
+            stop_reason="max_iterations",
             n_iterations=1,
         )
 
@@ -247,7 +247,7 @@ class TestSaveHdf5:
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=0.5,
             best_y=0.2,
-            stop_reason="max_evaluations",
+            stop_reason="max_iterations",
             n_iterations=1,
         )
 

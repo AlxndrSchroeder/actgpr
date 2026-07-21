@@ -19,7 +19,7 @@ def create_run_dir(
     fit_mode: str,
     training_iter: int | None,
     ei_threshold: float,
-    max_evaluations: int,
+    max_iterations: int,
     noise: float,
     lengthscale: float | None,
     outputscale: float | None,
@@ -36,7 +36,7 @@ def create_run_dir(
         Number of training iterations (if fit_mode is "training").
     ei_threshold : float
         Expected improvement threshold for convergence.
-    max_evaluations : int
+    max_iterations : int
         Maximum number of evaluations.
     noise : float
         Noise level for the surrogate.
@@ -55,12 +55,12 @@ def create_run_dir(
     if fit_mode == "training":
         folder_name = (
             f"{timestamp}_training{training_iter}iter_"
-            f"ei{ei_threshold}_eval{max_evaluations}_n{noise}"
+            f"ei{ei_threshold}_maxiter{max_iterations}_n{noise}"
         )
     else:
         folder_name = (
             f"{timestamp}_notraining_ei{ei_threshold}_"
-            f"eval{max_evaluations}_ls{lengthscale}_os{outputscale}_n{noise}"
+            f"maxiter{max_iterations}_ls{lengthscale}_os{outputscale}_n{noise}"
         )
 
     run_dir = base_path / folder_name

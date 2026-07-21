@@ -29,7 +29,7 @@ class OptimisationRun:
 
     The loop terminates when either the maximum EI score falls below
     ei_threshold (nothing left to gain) or the number of optimisation
-    iterations reaches max_evaluations (budget cap) — whichever fires first.
+    iterations reaches max_iterations (budget cap) — whichever fires first.
 
     Use the classmethods ``with_training`` and ``without_training`` to
     construct an OptimisationRun. The raw ``__init__`` is available for
@@ -55,7 +55,7 @@ class OptimisationRun:
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
-        max_evaluations: int,
+        max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
         noise: float = 1e-4,
@@ -85,7 +85,7 @@ class OptimisationRun:
             float64 regardless of input dtype, so integer-valued inputs
             (e.g. [1, 2]) don't silently truncate later fractional points
             appended during the optimisation loop.
-        max_evaluations : int
+        max_iterations : int
             Maximum number of active optimisation iterations — GPR fit
             cycles — to execute (budget cap).
         ei_threshold : float
@@ -102,7 +102,7 @@ class OptimisationRun:
         Raises
         ------
         ValueError
-            If initial_train_x is empty, max_evaluations is not positive,
+            If initial_train_x is empty, max_iterations is not positive,
             search_bounds is not an increasing interval, or ei_threshold
             is not positive.
         """
@@ -112,9 +112,9 @@ class OptimisationRun:
 
         if self.train_x.numel() == 0:
             raise ValueError("initial_train_x must contain at least one point.")
-        if max_evaluations <= 0:
+        if max_iterations <= 0:
             raise ValueError(
-                f"max_evaluations ({max_evaluations}) must be a positive integer."
+                f"max_iterations ({max_iterations}) must be a positive integer."
             )
         if not search_bounds[0] < search_bounds[1]:
             raise ValueError(
@@ -129,7 +129,7 @@ class OptimisationRun:
         self.search_bounds = search_bounds
         self.noise = noise
         self.store_snapshots = store_snapshots
-        self.max_evaluations = max_evaluations
+        self.max_iterations = max_iterations
         self.ei_threshold = ei_threshold
         self._run_dir = Path(run_dir) if run_dir is not None else None
 
@@ -161,7 +161,7 @@ class OptimisationRun:
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
-        max_evaluations: int,
+        max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
         training_iter: int = 50,
@@ -184,7 +184,7 @@ class OptimisationRun:
             The closed interval (lo, hi) within which input points are considered.
         initial_train_x : torch.Tensor or list[float] of shape (n,)
             The initial input points to seed the optimisation loop.
-        max_evaluations : int
+        max_iterations : int
             Maximum number of active optimisation iterations — GPR fit
             cycles — to execute (budget cap).
         ei_threshold : float
@@ -210,7 +210,7 @@ class OptimisationRun:
             surrogate=surrogate,
             search_bounds=search_bounds,
             initial_train_x=initial_train_x,
-            max_evaluations=max_evaluations,
+            max_iterations=max_iterations,
             ei_threshold=ei_threshold,
             n_candidates=n_candidates,
             noise=noise,
@@ -227,7 +227,7 @@ class OptimisationRun:
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
-        max_evaluations: int,
+        max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
         lengthscale: float = 1.0,
@@ -251,7 +251,7 @@ class OptimisationRun:
             The closed interval (lo, hi) within which input points are considered.
         initial_train_x : torch.Tensor or list[float] of shape (n,)
             The initial input points to seed the optimisation loop.
-        max_evaluations : int
+        max_iterations : int
             Maximum number of active optimisation iterations — GPR fit
             cycles — to execute (budget cap).
         ei_threshold : float
@@ -277,7 +277,7 @@ class OptimisationRun:
             surrogate=surrogate,
             search_bounds=search_bounds,
             initial_train_x=initial_train_x,
-            max_evaluations=max_evaluations,
+            max_iterations=max_iterations,
             ei_threshold=ei_threshold,
             n_candidates=n_candidates,
             noise=noise,
@@ -312,7 +312,7 @@ class OptimisationRun:
             "fit_mode": "training" if self._train_hyperparameters else "notraining",
             "search_bounds": list(self.search_bounds),
             "initial_train_x": self.train_x.tolist(),
-            "max_evaluations": self.max_evaluations,
+            "max_iterations": self.max_iterations,
             "ei_threshold": self.ei_threshold,
             "n_candidates": self._acq.n_candidates,
             "noise": self.noise,
@@ -345,7 +345,7 @@ class OptimisationRun:
             - "train_y": torch.Tensor — all Objective outputs.
             - "n_iterations": int — number of loop iterations executed.
             - "stop_reason": str — "ei_threshold" if EI dropped below
-              ei_threshold, "max_evaluations" if budget cap was reached.
+              ei_threshold, "max_iterations" if budget cap was reached.
         """
         # ── MRR: setup (only if run_dir provided) ──
         logger = logging.getLogger("actgpr")
@@ -360,7 +360,7 @@ class OptimisationRun:
                     self._training_iter if self._train_hyperparameters else None
                 ),
                 ei_threshold=self.ei_threshold,
-                max_evaluations=self.max_evaluations,
+                max_iterations=self.max_iterations,
                 noise=self.noise,
                 lengthscale=(
                     self._lengthscale if not self._train_hyperparameters else None
@@ -380,7 +380,7 @@ class OptimisationRun:
             logger.info(
                 f"Starting optimisation ({fit_mode}): "
                 f"{self.train_x.numel()} initial points, "
-                f"max_evaluations={self.max_evaluations}, "
+                f"max_iterations={self.max_iterations}, "
                 f"ei_threshold={self.ei_threshold}"
             )
 
@@ -434,10 +434,10 @@ class OptimisationRun:
 
     def _run_loop(self, logger: logging.Logger) -> tuple[str, int]:
         """Execute the optimisation loop and return (stop_reason, n_iterations)."""
-        stop_reason = "max_evaluations"
+        stop_reason = "max_iterations"
         n_iterations = 0
 
-        while n_iterations < self.max_evaluations:
+        while n_iterations < self.max_iterations:
             n_iterations += 1
 
             # 1. Fit surrogate to all current training data
@@ -514,10 +514,10 @@ class OptimisationRun:
                 [self.train_y, torch.tensor([new_y], dtype=self.train_y.dtype)]
             )
 
-        if stop_reason == "max_evaluations":
+        if stop_reason == "max_iterations":
             logger.info(
                 f"Stopped after {n_iterations} iterations "
-                f"(reached max_evaluations={self.max_evaluations})"
+                f"(reached max_iterations={self.max_iterations})"
             )
 
         return stop_reason, n_iterations
@@ -575,7 +575,7 @@ class OptimisationRun:
             f"OptimisationRun("
             f"fit={fit_mode}, "
             f"bounds={self.search_bounds}, "
-            f"max_eval={self.max_evaluations}, "
+            f"max_iter={self.max_iterations}, "
             f"ei_thresh={self.ei_threshold}, "
             f"n_points={self.train_x.numel()})"
         )

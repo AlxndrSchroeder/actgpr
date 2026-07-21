@@ -41,7 +41,7 @@ def make_quadratic_run(run_dir: Path | None) -> OptimisationRun:
         surrogate=GPyTorchSurrogate(),
         search_bounds=(-4.0, 4.0),
         initial_train_x=[-3.0, 3.0],
-        max_evaluations=8,
+        max_iterations=8,
         ei_threshold=1e-9,
         n_candidates=200,
         lengthscale=1.0,
@@ -87,7 +87,7 @@ class TestFullLoop:
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-4.0, 4.0),
             initial_train_x=[-3.0, 3.0],
-            max_evaluations=3,
+            max_iterations=3,
             ei_threshold=1e-9,
             n_candidates=100,
             training_iter=10,
@@ -96,7 +96,7 @@ class TestFullLoop:
         result = run.run()
 
         assert result["n_iterations"] >= 1
-        assert result["stop_reason"] in ("ei_threshold", "max_evaluations")
+        assert result["stop_reason"] in ("ei_threshold", "max_iterations")
 
 
 class TestMrrArtifacts:
@@ -122,7 +122,7 @@ class TestMrrArtifacts:
 
         assert config["fit_mode"] == "notraining"
         assert config["search_bounds"] == [-4.0, 4.0]
-        assert config["max_evaluations"] == 8
+        assert config["max_iterations"] == 8
         assert config["lengthscale"] == 1.0
 
     def test_meta_summary_matches_result(self, run_dir: tuple[Path, dict]) -> None:
