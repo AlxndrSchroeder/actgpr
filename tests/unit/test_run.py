@@ -360,6 +360,26 @@ class TestOptimisationRunSnapshots:
         with pytest.raises(RuntimeError, match="No snapshots available"):
             simple_run.plot_iterations()
 
+    def test_plot_iterations_ei_axis_has_fixed_range(
+        self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the EI axis uses one fixed range shared across iterations.
+
+        Without a fixed range, matplotlib would autoscale the EI subplot to
+        each iteration's own scores, hiding the shrinking EI maximum that
+        signals convergence.
+        """
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        snapshot_run.run()
+        snapshot_run.plot_iterations()
+
+        _, ei_ax = plt.gcf().axes[:2]
+        expected_max = max(r["ei_scores"].max().item() for r in snapshot_run._results)
+        assert ei_ax.get_ylim() == (0.0, pytest.approx(expected_max * 1.05))
+
 
 class TestOptimisationRunWithoutTraining:
     """Tests for OptimisationRun.without_training() classmethod."""
