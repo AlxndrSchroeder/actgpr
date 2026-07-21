@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed `max_evaluations` to `max_iterations` everywhere: the constructor
+  parameter, the `config.json`/`results.h5` keys, the `stop_reason` value,
+  and the run-folder naming (`eval20` → `maxiter20`)
+
 - README quickstart and new docs tutorial reframed around wrapping a
   blackbox function in an `ObjectiveFn`
 
