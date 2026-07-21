@@ -2,6 +2,8 @@
 
 **Active GPR (Gaussian Process Regression) Optimisation** — a Python package that finds the minimum of a scalar blackbox function by iteratively fitting a Gaussian Process surrogate and using Expected Improvement to pick the most informative next evaluation point. Each evaluation of the blackbox — a simulation, an experiment, a measurement — may be expensive, so the surrogate keeps the number of evaluations small.
 
+The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the Expected Improvement acquisition function follows [Jones, Schonlau & Welch (1998), *Efficient Global Optimization of Expensive Black-Box Functions*](https://doi.org/10.1023/A:1008306431147).
+
 ## How it works
 
 1. Evaluate the Objective at the initial input points.
@@ -14,7 +16,7 @@
 
 ## Installation
 
-Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/).
+Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/) ≥ 2.0 (the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). All dependency versions are pinned in `poetry.lock`, so `poetry install` reproduces the exact environment.
 
 ```bash
 git clone https://github.com/LxdrScr/actgpr.git
@@ -40,18 +42,29 @@ def my_blackbox(x: float) -> float:
     return (x - 1) ** 2
 
 
-# 2. Wrap it in an Objective: objective.evaluate(*x) -> tuple[float, ...]
+# 2. Wrap it in an Objective. Conceptually, the wrapper is as small as:
+#
+#        class ObjectiveFn:
+#            def __init__(self, func):
+#                self.func = func
+#
+#            def evaluate(self, *x: float) -> tuple[float, ...]:
+#                return tuple(float(self.func(v)) for v in x)
+#
 objective = ObjectiveFn(my_blackbox)
 
 # 3. Configure and execute the optimisation run
 run = OptimisationRun.with_training(
-    objective=objective,
-    surrogate=GPyTorchSurrogate(),
-    search_bounds=(-3.0, 5.0),   # interval in which the minimum is searched
-    initial_train_x=[-2.0, 4.0],
-    max_evaluations=20,
-    ei_threshold=0.001,
-    run_dir="results",           # optional: write the MRR record
+    objective=objective,            # the wrapped blackbox to minimise
+    surrogate=GPyTorchSurrogate(),  # the GP model that approximates it
+    search_bounds=(-3.0, 5.0),      # interval in which the minimum is searched
+    initial_train_x=[-2.0, 4.0],    # points evaluated before the loop starts —
+                                    # the first surrogate is fitted to these
+    max_evaluations=20,             # budget: max optimisation iterations
+    ei_threshold=0.001,             # stop early once max EI drops below this
+    noise=1e-4,                     # starting observation-noise variance
+                                    # (tuned further during training)
+    run_dir="results",              # optional: write the MRR record
 )
 result = run.run()
 print(result["best_x"], result["best_y"])
@@ -61,8 +74,23 @@ Expected output: `best_x` close to `1.0` and `best_y` close to `0.0` (the minimu
 
 **Fit modes** — the two constructors select how GP hyperparameters are handled:
 
-- `OptimisationRun.with_training(...)` — lengthscale, outputscale, and noise are optimised each iteration (Adam on the marginal log likelihood, `training_iter` steps).
-- `OptimisationRun.without_training(...)` — hyperparameters are fixed to user-supplied values; no optimisation.
+- `OptimisationRun.with_training(...)` — lengthscale, outputscale, and noise are optimised each iteration (Adam on the marginal log likelihood, `training_iter` steps). Use this when you do not know good hyperparameters — the usual case.
+- `OptimisationRun.without_training(...)` — hyperparameters stay fixed at exactly the values you pass; nothing is tuned. Use this for controlled comparisons or when good values are already known:
+
+```python
+run = OptimisationRun.without_training(
+    objective=objective,            # the wrapped blackbox to minimise
+    surrogate=GPyTorchSurrogate(),  # the GP model that approximates it
+    search_bounds=(-3.0, 5.0),      # interval in which the minimum is searched
+    initial_train_x=[-2.0, 4.0],    # points evaluated before the loop starts
+    max_evaluations=20,             # budget: max optimisation iterations
+    ei_threshold=0.001,             # stop early once max EI drops below this
+    lengthscale=1.0,                # RBF kernel lengthscale (fixed)
+    outputscale=1.0,                # kernel signal variance (fixed)
+    noise=1e-4,                     # observation-noise variance (fixed)
+)
+result = run.run()
+```
 
 Set `store_snapshots=True` to browse the GP and EI state of every iteration afterwards with `run.plot_iterations()` (interactive slider).
 
