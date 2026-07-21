@@ -174,6 +174,7 @@ def plot_acquisition(
     next_point: float | None = None,
     ax: Axes | None = None,
     show: bool = True,
+    ylim: tuple[float, float] | None = None,
 ) -> tuple[Figure, Axes]:
     """Plot the Expected Improvement acquisition landscape.
 
@@ -190,6 +191,12 @@ def plot_acquisition(
     show : bool, optional
         Whether to call plt.show() immediately, by default True.
         Set to False when composing multiple plots.
+    ylim : tuple[float, float] or None, optional
+        Fixed (min, max) for the y-axis. If None (default), matplotlib
+        autoscales to this call's own EI scores. Pass a fixed range — e.g.
+        the maximum EI score across an entire run — when comparing EI
+        landscapes across iterations, so a shrinking maximum is visible
+        rather than being autoscaled to fill the axes every time.
 
     Returns
     -------
@@ -215,6 +222,8 @@ def plot_acquisition(
 
     ax.set_xlabel("x")
     ax.set_ylabel("EI score")
+    if ylim is not None:
+        ax.set_ylim(*ylim)
     ax.legend()
 
     if show:
@@ -226,6 +235,7 @@ def plot_acquisition(
 def plot_iteration_snapshot(
     snapshot: dict,
     axes: tuple[Axes, Axes],
+    ei_ylim: tuple[float, float] | None = None,
 ) -> None:
     """Draw one iteration's GP and EI plots onto the given axes pair.
 
@@ -238,6 +248,10 @@ def plot_iteration_snapshot(
         ``improvement``.
     axes : tuple[Axes, Axes]
         A pair of axes (gp_ax, ei_ax) to draw on.
+    ei_ylim : tuple[float, float] or None, optional
+        Fixed (min, max) for the EI subplot's y-axis, shared across all
+        iterations being browsed. If None (default), the EI axis autoscales
+        to this iteration's own scores.
     """
     gp_ax, ei_ax = axes
 
@@ -264,5 +278,6 @@ def plot_iteration_snapshot(
         next_point=snapshot["next_point"],
         ax=ei_ax,
         show=False,
+        ylim=ei_ylim,
     )
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
