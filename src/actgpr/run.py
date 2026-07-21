@@ -154,6 +154,12 @@ class OptimisationRun:
         # Deferred-write accumulator for per-iteration data
         self._results: list[dict] = []
 
+        # Holds the Slider from plot_iterations() for its lifetime. Matplotlib
+        # widgets stop responding if their only reference is garbage
+        # collected — see the docstring of plot_iterations() for why this
+        # must be an attribute, not a local variable.
+        self._active_slider: Slider | None = None
+
     @classmethod
     def with_training(
         cls,
@@ -528,6 +534,14 @@ class OptimisationRun:
         Creates a figure with two subplots (GP predictions on top,
         EI landscape on bottom) and a slider to scrub through iterations.
 
+        The Slider is kept alive via ``self._active_slider`` for as long as
+        the OptimisationRun exists. Matplotlib does not keep its own strong
+        reference to a Slider — if the only reference were a local variable
+        here, it would be garbage collected as soon as this method returns,
+        which happens immediately whenever ``plt.show()`` does not block
+        (backend- and environment-dependent). The slider would still be
+        drawn, but would silently stop responding to drags.
+
         Raises
         ------
         RuntimeError
@@ -571,6 +585,9 @@ class OptimisationRun:
             fig.canvas.draw_idle()
 
         slider.on_changed(_update)
+
+        # Keep the slider alive beyond this method's local scope.
+        self._active_slider = slider
 
         plt.show()
 
