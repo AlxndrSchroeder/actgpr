@@ -11,7 +11,7 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
    - Fit the Surrogate to all training data collected so far.
    - Maximise the Acquisition function (Expected Improvement) → choose the next input point.
    - Evaluate the Objective at that point.
-3. Stop when the maximum EI score falls below `ei_threshold` (nothing left to gain) **or** the number of optimisation iterations reaches `max_evaluations` (budget cap) — whichever fires first.
+3. Stop when the maximum EI score falls below `ei_threshold` (nothing left to gain) **or** the number of optimisation iterations reaches `max_iterations` (budget cap) — whichever fires first.
 4. Optionally, every run writes a complete reproducibility record (MRR — see below).
 
 ## Installation
@@ -59,7 +59,7 @@ run = OptimisationRun.with_training(
     surrogate=GPyTorchSurrogate(),  # the GP model that approximates it
     search_bounds=(-3.0, 5.0),      # interval in which the minimum is searched
     initial_train_x=[-3.0, 5.0],    # points where we start looking for the minimum
-    max_evaluations=20,             # budget: max optimisation iterations
+    max_iterations=20,              # budget: max optimisation iterations
     ei_threshold=0.001,             # stop early once max EI drops below this
     noise=1e-4,                     # starting observation-noise variance
                                     # (tuned further during training)
@@ -82,7 +82,7 @@ run = OptimisationRun.without_training(
     surrogate=GPyTorchSurrogate(),  # the GP model that approximates it
     search_bounds=(-3.0, 5.0),      # interval in which the minimum is searched
     initial_train_x=[-3.0, 5.0],    # points where we start looking for the minimum
-    max_evaluations=20,             # budget: max optimisation iterations
+    max_iterations=20,              # budget: max optimisation iterations
     ei_threshold=0.001,             # stop early once max EI drops below this
     lengthscale=1.0,                # RBF kernel lengthscale (fixed)
     outputscale=1.0,                # kernel signal variance (fixed)
@@ -172,10 +172,10 @@ When `run_dir` is given, each run creates a timestamped **run directory** (named
 |---|---|
 | **`OptimisationRun`** | Top-level orchestrator: owns the loop and all MRR writes. |
 | **Fit mode** | `with_training` (hyperparameters optimised each iteration) vs. `without_training` (fixed); recorded as `"training"` / `"notraining"` in `config.json`. |
-| **`max_evaluations`** | Budget cap: the maximum number of active optimisation iterations (GPR fit cycles) — not individual Objective calls. |
+| **`max_iterations`** | Budget cap: the maximum number of active optimisation iterations (GPR fit cycles) — not individual Objective calls. |
 | **`ei_threshold`** | Convergence threshold: the loop stops when `max_ei` falls below it. |
 | **Convergence criterion** | EI below threshold **or** budget reached — whichever fires first. |
-| **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_evaluations"`. |
+| **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_iterations"`. |
 | **`new_y`** | The Objective output at the newly evaluated `next_point`. |
 | **`best_x` / `best_y`** | The input point with the lowest Objective output, and that output — the final result. |
 | **`store_snapshots`** | If `True`, each iteration's GP + EI state is kept for interactive browsing via `plot_iterations()`. |

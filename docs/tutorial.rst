@@ -53,7 +53,7 @@ Three decisions matter most:
     The closed interval ``[lo, hi]`` in which the algorithm searches for the
     minimum. The blackbox is never evaluated outside it.
 
-``max_evaluations``
+``max_iterations``
     The budget cap: the maximum number of active optimisation iterations
     (GPR fit cycles).
 
@@ -80,7 +80,7 @@ You also choose a **fit mode**:
        surrogate=GPyTorchSurrogate(),
        search_bounds=(-3.0, 5.0),   # interval in which the minimum is searched
        initial_train_x=[-3.0, 5.0],  # points where we start looking for the minimum
-       max_evaluations=20,
+       max_iterations=20,
        ei_threshold=0.001,
        store_snapshots=True,         # keep per-iteration state for plotting
        run_dir="results",            # write the MRR record
@@ -96,7 +96,7 @@ Step 3 — execute and interpret
    print(result["best_x"])       # ≈ 1.0  — input point with the lowest output
    print(result["best_y"])       # ≈ 0.0  — the lowest output found
    print(result["n_iterations"])  # iterations actually executed
-   print(result["stop_reason"])   # "ei_threshold" or "max_evaluations"
+   print(result["stop_reason"])   # "ei_threshold" or "max_iterations"
 
 ``result["train_x"]`` and ``result["train_y"]`` hold every input point the
 run evaluated and the corresponding Objective outputs — the initial points
