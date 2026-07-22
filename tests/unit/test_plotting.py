@@ -1,9 +1,13 @@
 """Unit tests for plotting utilities."""
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import pytest
 import torch
 
-from actgpr.plotting import plot_acquisition, plot_iteration_snapshot
+from actgpr import mrr
+from actgpr.plotting import plot_acquisition, plot_iteration_snapshot, plot_run_history
 
 
 def _make_snapshot(iteration: int, ei_scores: torch.Tensor) -> dict:
@@ -103,3 +107,74 @@ class TestPlotIterationSnapshot:
 
         assert ei_ax.get_ylim() == (0.0, 3.0)
         assert gp_ax.get_ylim() != (0.0, 3.0)
+
+
+class TestPlotRunHistory:
+    """Tests for plot_run_history — plotting a saved run from its path alone."""
+
+    @pytest.fixture()
+    def run_dir(self, tmp_path: Path) -> Path:
+        """Write a minimal results.h5 into tmp_path and return the directory."""
+        results = [
+            {
+                "iteration": i,
+                "next_point": float(i),
+                "new_y": 1.0 / i,
+                "current_best": 1.0 / i,
+                "max_ei": 1.0 / i,
+                "prediction_error": 0.5 / i,
+                "improvement": 0.1 / i,
+            }
+            for i in range(1, 6)
+        ]
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 1.0]),
+            final_train_y=torch.tensor([1.0, 0.5]),
+            best_x=1.0,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=5,
+        )
+        return tmp_path
+
+    def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
+        """Test that a clear error is raised for a directory without results.h5."""
+        with pytest.raises(FileNotFoundError, match="results.h5"):
+            plot_run_history(tmp_path, show=False)
+
+    def test_accepts_only_the_run_directory(self, run_dir: Path) -> None:
+        """Test that the run directory alone is enough to build the plot."""
+        fig, ax = plot_run_history(run_dir, show=False)
+
+        assert fig is not None
+        assert ax is not None
+
+    def test_plots_prediction_error_and_improvement(self, run_dir: Path) -> None:
+        """Test that both validation metric series are drawn."""
+        _, ax = plot_run_history(run_dir, show=False)
+
+        labels = [line.get_label() for line in ax.get_lines()]
+        assert "prediction_error" in labels
+        assert "improvement" in labels
+
+        # Each plotted line has one point per iteration.
+        pred_error_line = next(
+            line for line in ax.get_lines() if line.get_label() == "prediction_error"
+        )
+        assert len(pred_error_line.get_xdata()) == 5
+
+    def test_title_reports_best_y_and_stop_reason(self, run_dir: Path) -> None:
+        """Test that the title surfaces the run's final outcome."""
+        _, ax = plot_run_history(run_dir, show=False)
+
+        assert "0.2" in ax.get_title()
+        assert "max_iterations" in ax.get_title()
+
+    def test_accepts_string_path(self, run_dir: Path) -> None:
+        """Test that a plain string path works, not just a Path object."""
+        fig, ax = plot_run_history(str(run_dir), show=False)
+        assert ax is not None
