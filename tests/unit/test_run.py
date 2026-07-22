@@ -380,6 +380,39 @@ class TestOptimisationRunSnapshots:
         expected_max = max(r["ei_scores"].max().item() for r in snapshot_run._results)
         assert ei_ax.get_ylim() == (0.0, pytest.approx(expected_max * 1.05))
 
+    def test_slider_kept_alive_and_responsive(
+        self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the slider survives after plot_iterations() returns.
+
+        Matplotlib widgets stop responding to input if their only reference
+        is garbage collected. This forces a collection pass — which would
+        previously have destroyed a locally-scoped Slider — and then drags
+        the slider programmatically to confirm it still redraws the figure.
+        """
+        import gc
+
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        snapshot_run.run()
+        snapshot_run.plot_iterations()
+
+        assert snapshot_run._active_slider is not None
+
+        gc.collect()  # would destroy an unreferenced Slider
+
+        if len(snapshot_run._results) < 2:
+            return  # converged after one iteration — nothing to scrub to
+
+        gp_ax, _ = plt.gcf().axes[:2]
+        title_before = gp_ax.get_title()
+
+        snapshot_run._active_slider.set_val(2)  # simulate dragging to iteration 2
+
+        assert gp_ax.get_title() != title_before
+
 
 class TestOptimisationRunWithoutTraining:
     """Tests for OptimisationRun.without_training() classmethod."""
