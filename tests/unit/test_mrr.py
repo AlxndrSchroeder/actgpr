@@ -119,6 +119,27 @@ class TestWriteMeta:
         assert "libraries" in loaded
         assert "git_commit" in loaded
 
+    def test_contains_package_identity(self, tmp_path: Path):
+        """Test that meta.json identifies the package on its own."""
+        import datetime
+
+        start = datetime.datetime.now()
+
+        mrr.write_meta(
+            tmp_path,
+            run_start=start,
+            run_end=start,
+            best_x=1.0,
+            best_y=-0.5,
+            n_iterations=5,
+            stop_reason="ei_threshold",
+        )
+
+        loaded = json.loads((tmp_path / "meta.json").read_text())
+        assert loaded["package_name"] == "actgpr"
+        assert loaded["actgpr_version"] != "unknown"
+        assert loaded["repository"] == "https://github.com/LxdrScr/actgpr"
+
     def test_contains_output_summary(self, tmp_path: Path):
         import datetime
 
