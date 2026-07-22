@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Avoid two Pages deployments racing each other.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -54,3 +59,23 @@ jobs:
         run: poetry install
       - name: Build docs (warnings are errors)
         run: poetry run sphinx-build -W docs docs/build/html
+      - name: Upload docs artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build/html
+
+  deploy-docs:
+    needs: docs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
