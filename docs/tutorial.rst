@@ -10,7 +10,7 @@ Setup
 
 .. code-block:: bash
 
-   git clone https://github.com/LxdrScr/actgpr.git
+   git clone https://github.com/AlxndrSchroeder/actgpr.git
    cd actgpr
    poetry install
 
