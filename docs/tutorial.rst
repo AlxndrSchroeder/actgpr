@@ -65,7 +65,10 @@ Three decisions matter most:
 You also choose a **fit mode**:
 
 - ``OptimisationRun.with_training(...)`` — the GP hyperparameters
-  (lengthscale, outputscale, noise) are optimised at every iteration.
+  (lengthscale, outputscale, noise) are re-tuned at every iteration using
+  `Adam <https://arxiv.org/abs/1412.6980>`_ (GPyTorch's ``torch.optim.Adam``
+  integration), a gradient-descent variant that maximises the marginal log
+  likelihood — how plausible the observed training data is under the GP.
   Use this when you do not know good hyperparameters — the usual case.
 - ``OptimisationRun.without_training(...)`` — hyperparameters stay fixed at
   the values you pass. Use this for controlled comparisons or when good
@@ -120,37 +123,125 @@ Step 5 — the reproducibility record (MRR)
 -----------------------------------------
 
 Because ``run_dir`` was given, the run created a timestamped folder under
-``results/`` with five artifacts: ``config.json`` (parameters),
-``manifest.json`` (input checksums), ``meta.json`` (environment and output
-summary), ``run.log`` (per-iteration audit trail), and ``results.h5``.
+``results/`` holding the five MRR artifacts:
 
-``results.h5`` is self-describing — the configuration is stored as HDF5
-attributes next to the data. The per-iteration history reads directly as
-plottable series:
+- ``config.json`` — every parameter used, written at the start of the run
+- ``manifest.json`` — a SHA-256 checksum of the inputs
+- ``meta.json`` — environment: package name, version, and repository, git
+  commit, Python/library versions, platform, timestamps, and output summary
+- ``run.log`` — a human-readable, per-iteration audit trail
+- ``results.h5`` — self-describing HDF5: configuration is stored as
+  attributes alongside the data, so the file can be understood on its own
+
+Revisiting a saved run
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``plot_run_history`` builds the validation-metrics plot directly from a
+run directory — no ``OptimisationRun`` object needed, so a past run can be
+revisited at any later time:
 
 .. code-block:: python
 
    from pathlib import Path
 
-   import h5py
-   import matplotlib.pyplot as plt
+   from actgpr.plotting import plot_run_history
 
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
+   plot_run_history(run_dir)
+
+This plots ``prediction_error`` and ``improvement`` against iteration:
+``prediction_error`` shrinking towards zero shows the surrogate learning
+the blackbox; ``improvement`` flattening shows the optimisation converging.
+
+For a custom analysis, read the same series directly:
+
+.. code-block:: python
+
+   import h5py
 
    with h5py.File(run_dir / "results.h5") as f:
        iteration = f["history/iteration"][:]
-       pred_error = f["history/prediction_error"][:]
+       prediction_error = f["history/prediction_error"][:]
        improvement = f["history/improvement"][:]
 
-   plt.plot(iteration, pred_error, label="prediction_error")
-   plt.plot(iteration, improvement, label="improvement")
-   plt.xlabel("iteration")
-   plt.legend()
-   plt.show()
+Parameter reference
+--------------------
 
-``prediction_error`` (surrogate error at the chosen point) shrinking towards
-zero tells you the surrogate is learning the blackbox; ``improvement``
-flattening tells you the optimisation has converged.
+``with_training`` and ``without_training`` share the same core parameters
+and differ only in how the GP hyperparameters are handled.
+
+Shared parameters
+~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Parameter
+     - Meaning
+   * - ``objective``
+     - The wrapped blackbox function to minimise (an ``ObjectiveFn``).
+   * - ``surrogate``
+     - The GP surrogate backend. Pass a fresh ``GPyTorchSurrogate()`` — it
+       holds fitted state internally, so do not reuse one across runs.
+   * - ``search_bounds``
+     - The closed interval ``(lo, hi)`` in which the algorithm searches for
+       the minimum. The blackbox is never evaluated outside it.
+   * - ``initial_train_x``
+     - Points where the search starts — the first surrogate is fitted to
+       these before the loop runs. By convention, use the two
+       ``search_bounds`` endpoints.
+   * - ``max_iterations``
+     - Budget cap: the maximum number of active optimisation iterations
+       (GPR fit cycles) — not individual blackbox evaluations.
+   * - ``ei_threshold``
+     - Convergence threshold: the run stops early once the best achievable
+       Expected Improvement drops below this value.
+   * - ``n_candidates`` (default 500)
+     - Number of evenly spaced candidate points the acquisition function
+       scores every iteration.
+   * - ``noise`` (default 1e-4)
+     - Starting observation noise variance for the GP likelihood. In
+       ``with_training`` it is only a *starting point* — Adam tunes it
+       further alongside lengthscale and outputscale. In
+       ``without_training`` it stays fixed at this value for the whole run.
+   * - ``store_snapshots`` (default False)
+     - If ``True``, also keeps each iteration's full GP/EI arrays (in
+       memory and under ``results.h5``'s ``iterations/`` group) so
+       ``plot_iterations()`` can browse them afterward. The
+       ``prediction_error``/``improvement`` history used by
+       ``plot_run_history()`` is recorded either way.
+   * - ``run_dir`` (default None)
+     - If given, writes the MRR record (see Step 5) to a timestamped
+       folder under this path. If ``None``, nothing is written to disk.
+
+``with_training`` only
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Parameter
+     - Meaning
+   * - ``training_iter`` (default 50)
+     - Number of Adam optimisation steps run per surrogate fit, tuning
+       lengthscale, outputscale, and noise to maximise the marginal log
+       likelihood.
+
+``without_training`` only
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Parameter
+     - Meaning
+   * - ``lengthscale`` (default 1.0)
+     - Fixed RBF kernel lengthscale — never tuned.
+   * - ``outputscale`` (default 1.0)
+     - Fixed kernel signal variance — never tuned.
 
 Where to go next
 ----------------

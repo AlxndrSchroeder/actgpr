@@ -10,8 +10,13 @@ plot_acquisition
     Plots the Expected Improvement acquisition landscape.
 plot_iteration_snapshot
     Draws one iteration's GP + EI side by side from a snapshot dict.
+plot_run_history
+    Plots validation metrics vs. iteration from a saved run's results.h5.
 """
 
+from pathlib import Path
+
+import h5py
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -281,3 +286,68 @@ def plot_iteration_snapshot(
         ylim=ei_ylim,
     )
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
+
+
+def plot_run_history(
+    run_dir: Path | str,
+    ax: Axes | None = None,
+    show: bool = True,
+) -> tuple[Figure, Axes]:
+    """Plot validation metrics vs. iteration from a saved run's results.h5.
+
+    Reads the ``/history`` series directly from ``results.h5`` — no
+    OptimisationRun object is needed, so a past run can be visualised from
+    its run directory alone at any later time.
+
+    Parameters
+    ----------
+    run_dir : Path or str
+        The run directory written by OptimisationRun.run() (the folder
+        containing ``results.h5``, not the file itself).
+    ax : matplotlib.axes.Axes or None, optional
+        An existing axes to draw on. If None, a new figure and axes are created.
+    show : bool, optional
+        Whether to call plt.show() immediately, by default True.
+
+    Returns
+    -------
+    tuple[Figure, Axes]
+        The figure and axes used for the plot.
+
+    Raises
+    ------
+    FileNotFoundError
+        If run_dir does not contain a results.h5 file.
+    """
+    h5_path = Path(run_dir) / "results.h5"
+    if not h5_path.exists():
+        raise FileNotFoundError(
+            f"No results.h5 found in {run_dir} — is this a run directory "
+            "written by OptimisationRun.run()?"
+        )
+
+    with h5py.File(h5_path, "r") as f:
+        history = f["history"]
+        iteration = history["iteration"][:]
+        prediction_error = history["prediction_error"][:]
+        improvement = history["improvement"][:]
+        best_y = f["final"].attrs["best_y"]
+        stop_reason = f["final"].attrs["stop_reason"]
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    else:
+        fig = ax.get_figure()
+
+    ax.plot(iteration, prediction_error, "o-", label="prediction_error")
+    ax.plot(iteration, improvement, "o-", label="improvement")
+    ax.axhline(0, color="grey", linestyle=":", linewidth=1)
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("value")
+    ax.set_title(f"Run history | best_y: {best_y:.4f} | stop: {stop_reason}")
+    ax.legend()
+
+    if show:
+        plt.show()
+
+    return fig, ax

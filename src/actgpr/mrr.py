@@ -100,7 +100,12 @@ def write_meta(
     n_iterations: int,
     stop_reason: str,
 ) -> None:
-    """Write environment and output summary to meta.json."""
+    """Write environment and output summary to meta.json.
+
+    Includes the package name, version, and repository URL so a meta.json
+    file remains identifiable on its own — e.g. if shared or archived
+    separately from this repository.
+    """
     try:
         git_commit = (
             subprocess.check_output(
@@ -113,9 +118,23 @@ def write_meta(
         git_commit = "unknown"
 
     try:
-        actgpr_version = importlib.metadata.version("actgpr")
+        package_metadata = importlib.metadata.metadata("actgpr")
+        package_name = package_metadata["Name"]
+        actgpr_version = package_metadata["Version"]
+        # Project-URL entries look like "Repository, https://github.com/...";
+        # pull the URL out of whichever one is labelled "Repository".
+        repository = next(
+            (
+                url.split(", ", 1)[1]
+                for url in package_metadata.get_all("Project-URL") or []
+                if url.startswith("Repository,")
+            ),
+            "unknown",
+        )
     except importlib.metadata.PackageNotFoundError:
+        package_name = "unknown"
         actgpr_version = "unknown"
+        repository = "unknown"
 
     libraries = {}
     for pkg in ["torch", "gpytorch", "h5py"]:
@@ -130,7 +149,9 @@ def write_meta(
         "git_commit": git_commit,
         "python_version": platform.python_version(),
         "platform": platform.platform(),
+        "package_name": package_name,
         "actgpr_version": actgpr_version,
+        "repository": repository,
         "libraries": libraries,
         "output_summary": {
             "best_x": float(best_x),

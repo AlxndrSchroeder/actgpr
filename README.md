@@ -103,7 +103,7 @@ When `run_dir` is given, each run creates a timestamped **run directory** (named
 |---|---|
 | `config.json` | All run parameters (written at start — survives crashes) |
 | `manifest.json` | SHA-256 checksum of the inputs |
-| `meta.json` | Environment: git commit, Python/library versions, platform, timestamps, output summary |
+| `meta.json` | Environment: package name/version, repository, git commit, Python/library versions, platform, timestamps, output summary |
 | `run.log` | Per-iteration audit trail |
 | `results.h5` | Self-describing HDF5 with all numerical results |
 
@@ -115,6 +115,14 @@ When `run_dir` is given, each run creates a timestamped **run directory** (named
 │                current_best, max_ei, prediction_error, improvement)
 ├── iterations/  iter_NNN/ GP snapshot arrays (only with store_snapshots=True)
 └── final/       best_x, best_y, stop_reason, n_iterations + final train_x/train_y
+```
+
+To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error` and `improvement` vs. iteration straight from a run directory's `results.h5` — no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk:
+
+```python
+from actgpr.plotting import plot_run_history
+
+plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
 ```
 
 ## Vocabulary
@@ -199,6 +207,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **MRR** | Minimal Reproducible Run — a pattern requiring every run to record: what was run, with what inputs, in which environment, what happened, and what came out. |
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
+| **`plot_run_history()`** | Builds the `prediction_error`/`improvement` plot from a run directory's `results.h5` alone — no `OptimisationRun` object needed. |
 
 ## Development
 

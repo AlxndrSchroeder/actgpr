@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphinx API docs and tutorial are now published to GitHub Pages
   ([lxdrscr.github.io/actgpr](https://lxdrscr.github.io/actgpr/)) via a
   `deploy-docs` CI stage that runs after `docs` passes on `main`
+- `meta.json` now records `package_name` and `repository`, fetched from
+  installed package metadata, so a run's provenance file identifies the
+  software that produced it even if shared on its own
+- `plotting.plot_run_history(run_dir)` builds the `prediction_error` /
+  `improvement` vs. iteration plot directly from a saved run's `results.h5`
+  — no `OptimisationRun` object needed
 
 ### Changed
 
