@@ -2,6 +2,7 @@
 
 import math
 
+import matplotlib.pyplot as plt
 import pytest
 import torch
 
@@ -9,6 +10,20 @@ from actgpr.objective_fn import ObjectiveFn
 from actgpr.surrogate import GPyTorchSurrogate
 
 SEED = 42
+
+
+@pytest.fixture(autouse=True)
+def _close_all_figures():
+    """Close every matplotlib figure after each test.
+
+    Plotting tests create figures via plt.subplots() without an explicit
+    plt.close(); left open, they accumulate across the suite until
+    matplotlib's open-figure warning fires — which our strict
+    filterwarnings=["error"] policy turns into a failure on whatever test
+    happens to tip over the threshold, not the test that actually leaked.
+    """
+    yield
+    plt.close("all")
 
 
 @pytest.fixture()
