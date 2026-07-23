@@ -4,7 +4,7 @@
 
 The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the Expected Improvement acquisition function follows [Jones, Schonlau & Welch (1998), *Efficient Global Optimization of Expensive Black-Box Functions*](https://doi.org/10.1023/A:1008306431147).
 
-**Documentation:** [lxdrscr.github.io/actgpr](https://lxdrscr.github.io/actgpr/) — full API reference and a step-by-step tutorial, built from this repository's docstrings and reST sources with Sphinx.
+**Documentation:** [alxndrschroeder.github.io/actgpr](https://alxndrschroeder.github.io/actgpr/) — full API reference and a step-by-step tutorial, built from this repository's docstrings and reST sources with Sphinx.
 
 ## How it works
 
@@ -21,7 +21,7 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/) ≥ 2.0 (the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). All dependency versions are pinned in `poetry.lock`, so `poetry install` reproduces the exact environment.
 
 ```bash
-git clone https://github.com/LxdrScr/actgpr.git
+git clone https://github.com/AlxndrSchroeder/actgpr.git
 cd actgpr
 poetry install
 ```
