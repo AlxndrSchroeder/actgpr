@@ -199,7 +199,9 @@ def plot_acquisition(
     ei_scores : torch.Tensor of shape (m,)
         The EI score for each candidate point.
     next_point : float or None, optional
-        The selected next input point. If provided, a vertical line is drawn.
+        The selected next input point. If provided, a vertical line is drawn,
+        along with a marker at (next_point, max EI score) labelled with its
+        value.
     ax : matplotlib.axes.Axes or None, optional
         An existing axes to draw on. If None, a new figure and axes are created.
     show : bool, optional
@@ -263,6 +265,18 @@ def plot_acquisition(
             linestyle="--",
             alpha=0.7,
             label=f"Next point (x={next_point:.2f})",
+        )
+        # Mark the EI score at next_point (its highest value, by construction
+        # of find_next_input_point) directly on the curve, not just in the
+        # subplot title.
+        true_max_ei = ei_scores.max().item()
+        marker_y = plotted_scores.max().item()  # lands on the (possibly clamped) curve
+        ax.plot(
+            [next_point],
+            [marker_y],
+            "ro",
+            markersize=7,
+            label=f"Max EI = {true_max_ei:.2e}",
         )
 
     if ei_threshold is not None:
