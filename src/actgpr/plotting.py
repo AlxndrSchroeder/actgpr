@@ -28,6 +28,13 @@ from actgpr.surrogate import GPyTorchSurrogate
 # ±2σ covers ≈95% of a Gaussian posterior.
 CI_STD_FACTOR = 2.0
 
+# Default log-scale EI y-axis floor, one order of magnitude below
+# ei_threshold — keeps the threshold line inside the plot rather than at
+# its bottom edge, with room to see the curve dip below it.
+EI_LOG_FLOOR_MARGIN = 0.1
+# Fallback log-scale floor when no ei_threshold is available.
+EI_LOG_FLOOR_DEFAULT = 1e-8
+
 
 def plot_gp(
     candidates: torch.Tensor,
@@ -180,6 +187,8 @@ def plot_acquisition(
     ax: Axes | None = None,
     show: bool = True,
     ylim: tuple[float, float] | None = None,
+    log_scale: bool = False,
+    ei_threshold: float | None = None,
 ) -> tuple[Figure, Axes]:
     """Plot the Expected Improvement acquisition landscape.
 
@@ -197,11 +206,24 @@ def plot_acquisition(
         Whether to call plt.show() immediately, by default True.
         Set to False when composing multiple plots.
     ylim : tuple[float, float] or None, optional
-        Fixed (min, max) for the y-axis. If None (default), matplotlib
-        autoscales to this call's own EI scores. Pass a fixed range — e.g.
-        the maximum EI score across an entire run — when comparing EI
-        landscapes across iterations, so a shrinking maximum is visible
-        rather than being autoscaled to fill the axes every time.
+        Fixed (min, max) for the y-axis. If None (default), the range is
+        either autoscaled (linear) or derived from ei_threshold (log_scale).
+        Pass a fixed range — e.g. the maximum EI score across an entire run —
+        when comparing EI landscapes across iterations, so a shrinking
+        maximum is visible rather than being autoscaled to fill the axes
+        every time.
+    log_scale : bool, optional
+        If True, draws the y-axis on a log scale, by default False. EI often
+        shrinks by orders of magnitude as a run converges, which a linear
+        axis compresses into an invisible flat line — log scale keeps that
+        shrinkage visible. EI is exactly 0 at training points (no
+        uncertainty); since a log axis cannot show zero, scores are clamped
+        to the y-axis floor before plotting.
+    ei_threshold : float or None, optional
+        The run's convergence threshold. If given, drawn as a horizontal
+        reference line. When log_scale is True and ylim is not given, the
+        y-axis floor defaults to one order of magnitude below this value,
+        so the threshold line sits inside the plot rather than at its edge.
 
     Returns
     -------
@@ -213,8 +235,26 @@ def plot_acquisition(
     else:
         fig = ax.get_figure()
 
-    ax.plot(candidates.numpy(), ei_scores.numpy(), "g", label="Expected Improvement")
-    ax.fill_between(candidates.numpy(), 0, ei_scores.numpy(), alpha=0.2, color="g")
+    if log_scale:
+        ax.set_yscale("log")
+        if ylim is not None:
+            floor = ylim[0]
+        elif ei_threshold is not None:
+            floor = ei_threshold * EI_LOG_FLOOR_MARGIN
+        else:
+            floor = EI_LOG_FLOOR_DEFAULT
+        assert floor > 0, f"log_scale requires a positive y-axis floor, got {floor}"
+        plotted_scores = torch.clamp(ei_scores, min=floor)
+    else:
+        floor = 0.0
+        plotted_scores = ei_scores
+
+    ax.plot(
+        candidates.numpy(), plotted_scores.numpy(), "g", label="Expected Improvement"
+    )
+    ax.fill_between(
+        candidates.numpy(), floor, plotted_scores.numpy(), alpha=0.2, color="g"
+    )
 
     if next_point is not None:
         ax.axvline(
@@ -225,10 +265,24 @@ def plot_acquisition(
             label=f"Next point (x={next_point:.2f})",
         )
 
+    if ei_threshold is not None:
+        ax.axhline(
+            ei_threshold,
+            color="grey",
+            linestyle=":",
+            linewidth=1.5,
+            label=f"ei_threshold={ei_threshold:.2e}",
+        )
+
     ax.set_xlabel("x")
     ax.set_ylabel("EI score")
     if ylim is not None:
         ax.set_ylim(*ylim)
+    elif log_scale:
+        # Fix the floor even without an explicit ylim, so it always matches
+        # what the data was clamped to rather than whatever matplotlib
+        # autoscales the bottom to.
+        ax.set_ylim(bottom=floor)
     ax.legend()
 
     if show:
@@ -241,6 +295,8 @@ def plot_iteration_snapshot(
     snapshot: dict,
     axes: tuple[Axes, Axes],
     ei_ylim: tuple[float, float] | None = None,
+    ei_log_scale: bool = False,
+    ei_threshold: float | None = None,
 ) -> None:
     """Draw one iteration's GP and EI plots onto the given axes pair.
 
@@ -257,6 +313,13 @@ def plot_iteration_snapshot(
         Fixed (min, max) for the EI subplot's y-axis, shared across all
         iterations being browsed. If None (default), the EI axis autoscales
         to this iteration's own scores.
+    ei_log_scale : bool, optional
+        If True, draws the EI subplot's y-axis on a log scale — see
+        plot_acquisition for why this matters as EI shrinks during a run,
+        by default False.
+    ei_threshold : float or None, optional
+        The run's convergence threshold, drawn as a horizontal reference
+        line on the EI subplot. See plot_acquisition.
     """
     gp_ax, ei_ax = axes
 
@@ -284,6 +347,8 @@ def plot_iteration_snapshot(
         ax=ei_ax,
         show=False,
         ylim=ei_ylim,
+        log_scale=ei_log_scale,
+        ei_threshold=ei_threshold,
     )
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
 
