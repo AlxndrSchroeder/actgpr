@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Sphinx API docs and tutorial are now published to GitHub Pages
-  ([lxdrscr.github.io/actgpr](https://lxdrscr.github.io/actgpr/)) via a
+  ([alxndrschroeder.github.io/actgpr](https://alxndrschroeder.github.io/actgpr/)) via a
   `deploy-docs` CI stage that runs after `docs` passes on `main`
 - `meta.json` now records `package_name` and `repository`, fetched from
   installed package metadata, so a run's provenance file identifies the

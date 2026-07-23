@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/LxdrScr/actgpr"
+Repository = "https://github.com/AlxndrSchroeder/actgpr"
 
 [tool.poetry]
 requires-poetry = ">=2.0"

@@ -138,7 +138,7 @@ class TestWriteMeta:
         loaded = json.loads((tmp_path / "meta.json").read_text())
         assert loaded["package_name"] == "actgpr"
         assert loaded["actgpr_version"] != "unknown"
-        assert loaded["repository"] == "https://github.com/LxdrScr/actgpr"
+        assert loaded["repository"] == "https://github.com/AlxndrSchroeder/actgpr"
 
     def test_contains_output_summary(self, tmp_path: Path):
         import datetime
