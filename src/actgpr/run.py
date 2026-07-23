@@ -95,9 +95,11 @@ class OptimisationRun:
         noise : float, optional
             Observation noise variance for the GP likelihood, by default 1e-4.
         store_snapshots : bool, optional
-            If True, each iteration stores a snapshot of the GP predictions
-            and EI scores for later interactive plotting via plot_iterations(),
-            by default False.
+            If True, each iteration also stores a snapshot of the GP
+            predictions and EI scores for later interactive plotting via
+            plot_iterations(), by default False. The prediction_error and
+            improvement history used by plotting.plot_run_history() is
+            recorded either way, regardless of this flag.
 
         Raises
         ------
@@ -204,7 +206,10 @@ class OptimisationRun:
             Initial observation noise variance for the GP likelihood,
             by default 1e-4.
         store_snapshots : bool, optional
-            If True, stores GP snapshots for interactive plotting, by default False.
+            If True, also stores GP snapshots for interactive plotting via
+            plot_iterations(), by default False. The prediction_error and
+            improvement history used by plotting.plot_run_history() is
+            recorded either way, regardless of this flag.
 
         Returns
         -------
@@ -271,7 +276,10 @@ class OptimisationRun:
         noise : float, optional
             The observation noise variance, by default 1e-4.
         store_snapshots : bool, optional
-            If True, stores GP snapshots for interactive plotting, by default False.
+            If True, also stores GP snapshots for interactive plotting via
+            plot_iterations(), by default False. The prediction_error and
+            improvement history used by plotting.plot_run_history() is
+            recorded either way, regardless of this flag.
 
         Returns
         -------

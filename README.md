@@ -93,7 +93,7 @@ run = OptimisationRun.without_training(
 result = run.run()
 ```
 
-Set `store_snapshots=True` to browse the GP and EI state of every iteration afterwards with `run.plot_iterations()` (interactive slider).
+Set `store_snapshots=True` to browse the GP and EI state of every iteration afterwards with `run.plot_iterations()` (interactive slider). The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded either way, regardless of this flag.
 
 ## Run outputs (MRR)
 
@@ -188,7 +188,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 | **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_iterations"`. |
 | **`new_y`** | The Objective output at the newly evaluated `next_point`. |
 | **`best_x` / `best_y`** | The input point with the lowest Objective output, and that output — the final result. |
-| **`store_snapshots`** | If `True`, each iteration's GP + EI state is kept for interactive browsing via `plot_iterations()`. |
+| **`store_snapshots`** | If `True`, each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded regardless of this flag. |
 | **Deferred-write accumulator** | Per-iteration results are collected in memory during the run and written to `results.h5` once at the end. |
 
 ### Validation metrics

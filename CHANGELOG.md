@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Clarified in `run.py` docstrings and the README that `store_snapshots`
+  only gates the per-iteration GP/EI arrays used by `plot_iterations()`;
+  the `prediction_error`/`improvement` history used by `plot_run_history()`
+  is always recorded, regardless of this flag
 - Renamed `max_evaluations` to `max_iterations` everywhere: the constructor
   parameter, the `config.json`/`results.h5` keys, the `stop_reason` value,
   and the run-folder naming (`eval20` → `maxiter20`)
