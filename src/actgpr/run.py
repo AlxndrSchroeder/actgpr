@@ -17,7 +17,7 @@ from matplotlib.widgets import Slider
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import ObjectiveFn
-from actgpr.plotting import plot_iteration_snapshot
+from actgpr.plotting import EI_LOG_FLOOR_MARGIN, plot_iteration_snapshot
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -536,7 +536,7 @@ class OptimisationRun:
 
         return stop_reason, n_iterations
 
-    def plot_iterations(self) -> None:
+    def plot_iterations(self, log_scale: bool = False) -> None:
         """Open an interactive matplotlib figure to browse iterations.
 
         Creates a figure with two subplots (GP predictions on top,
@@ -549,6 +549,15 @@ class OptimisationRun:
         which happens immediately whenever ``plt.show()`` does not block
         (backend- and environment-dependent). The slider would still be
         drawn, but would silently stop responding to drags.
+
+        Parameters
+        ----------
+        log_scale : bool, optional
+            If True, draws the EI subplot's y-axis on a log scale, with the
+            ei_threshold convergence criterion marked as a reference line.
+            EI often shrinks by orders of magnitude as a run converges,
+            which a linear axis compresses into an invisible flat line —
+            log scale keeps that shrinkage visible. By default False.
 
         Raises
         ------
@@ -563,15 +572,29 @@ class OptimisationRun:
 
         # Fixed EI y-axis range shared across all iterations — otherwise each
         # redraw autoscales to its own EI scores, hiding the shrinking max EI
-        # that signals convergence. 5% headroom keeps the peak off the frame.
+        # that signals convergence.
         max_ei_overall = max(r["ei_scores"].max().item() for r in snapshots)
-        ei_ylim = (0.0, max_ei_overall * 1.05)
+        if log_scale:
+            # Floor one order of magnitude below ei_threshold, so the
+            # threshold line sits inside the plot rather than at its edge.
+            ei_ylim = (self.ei_threshold * EI_LOG_FLOOR_MARGIN, max_ei_overall * 2)
+            ei_threshold = self.ei_threshold
+        else:
+            # 5% headroom keeps the peak off the frame.
+            ei_ylim = (0.0, max_ei_overall * 1.05)
+            ei_threshold = None
 
         fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
         plt.subplots_adjust(bottom=0.18, hspace=0.35)
 
         # Draw initial state
-        plot_iteration_snapshot(snapshots[0], (gp_ax, ei_ax), ei_ylim=ei_ylim)
+        plot_iteration_snapshot(
+            snapshots[0],
+            (gp_ax, ei_ax),
+            ei_ylim=ei_ylim,
+            ei_log_scale=log_scale,
+            ei_threshold=ei_threshold,
+        )
 
         # Slider axis sits below both subplots
         slider_ax = fig.add_axes([0.15, 0.04, 0.7, 0.04])
@@ -589,7 +612,13 @@ class OptimisationRun:
             idx = int(val) - 1
             gp_ax.cla()
             ei_ax.cla()
-            plot_iteration_snapshot(snapshots[idx], (gp_ax, ei_ax), ei_ylim=ei_ylim)
+            plot_iteration_snapshot(
+                snapshots[idx],
+                (gp_ax, ei_ax),
+                ei_ylim=ei_ylim,
+                ei_log_scale=log_scale,
+                ei_threshold=ei_threshold,
+            )
             fig.canvas.draw_idle()
 
         slider.on_changed(_update)
