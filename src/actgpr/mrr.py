@@ -177,6 +177,7 @@ def save_hdf5(
     best_y: float,
     stop_reason: str,
     n_iterations: int,
+    convergence_snapshot: dict[str, object] | None = None,
 ) -> None:
     """Write a self-describing HDF5 file with the run history and results.
 
@@ -189,13 +190,29 @@ def save_hdf5(
         aligned by the ``iteration`` index dataset: ``next_point``, ``new_y``,
         ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``.
         This is the single authoritative record of the run's scalar history.
+        Covers only *evaluated* iterations — see ``convergence_snapshot``
+        below for the one fit that never reached evaluation.
     ``iterations/iter_NNN/``
         Written only when ``store_snapshots`` is True: the GP snapshot arrays
         ``candidates``, ``f_mean``, ``f_var``, ``ei_scores``, ``train_x``,
         ``train_y`` for that iteration.
     ``final/``
         Attributes ``best_x``, ``best_y``, ``stop_reason``, ``n_iterations``
-        and the final ``train_x``/``train_y`` datasets.
+        and the final ``train_x``/``train_y`` datasets. When ``stop_reason``
+        is ``"ei_threshold"`` and ``convergence_snapshot`` is given, also
+        holds the GP/EI state of the fit that triggered convergence —
+        attributes ``converged_max_ei``/``converged_next_point`` and
+        datasets ``converged_candidates``/``converged_f_mean``/
+        ``converged_f_var``/``converged_ei_scores``. That fit's candidate
+        was never evaluated, so it has no place in ``history/`` or
+        ``iterations/`` — this is the only place it is recorded.
+
+    Parameters
+    ----------
+    convergence_snapshot : dict or None, optional
+        The GP/EI snapshot of the fit that triggered ei_threshold
+        convergence (``OptimisationRun._convergence_snapshot``), or None if
+        the run stopped via max_iterations or store_snapshots was False.
     """
     h5_path = run_dir / "results.h5"
     with h5py.File(h5_path, "w") as f:
@@ -247,6 +264,18 @@ def save_hdf5(
         final_group.attrs["n_iterations"] = n_iterations
         final_group.create_dataset("train_x", data=final_train_x.numpy())
         final_group.create_dataset("train_y", data=final_train_y.numpy())
+
+        if convergence_snapshot is not None:
+            final_group.attrs["converged_max_ei"] = float(
+                convergence_snapshot["max_ei"]
+            )
+            final_group.attrs["converged_next_point"] = float(
+                convergence_snapshot["next_point"]
+            )
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                final_group.create_dataset(
+                    f"converged_{field}", data=convergence_snapshot[field].numpy()
+                )
 
 
 def setup_file_logger(run_dir: Path) -> logging.FileHandler:
