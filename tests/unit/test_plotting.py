@@ -204,6 +204,30 @@ class TestPlotIterationSnapshot:
         assert ei_ax.get_ylim() == (0.0, 3.0)
         assert gp_ax.get_ylim() != (0.0, 3.0)
 
+    def test_convergence_snapshot_gets_distinct_title(self) -> None:
+        """Test that a snapshot without prediction_error/improvement is
+        labelled as a convergence snapshot rather than a normal iteration.
+        """
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        candidates = torch.linspace(-1.0, 1.0, 10)
+        convergence_snapshot = {
+            "iteration": 18,
+            "candidates": candidates,
+            "f_mean": torch.zeros_like(candidates),
+            "f_var": torch.ones_like(candidates),
+            "train_x": torch.tensor([-1.0, 1.0]),
+            "train_y": torch.tensor([1.0, 1.0]),
+            "ei_scores": torch.linspace(0.0, 0.001, 10),
+            "next_point": 0.0,
+            "current_best": -0.94,
+            "max_ei": 0.001,
+        }
+
+        plot_iteration_snapshot(convergence_snapshot, (gp_ax, ei_ax))
+
+        assert "converged" in gp_ax.get_title()
+        assert "pred_error" not in gp_ax.get_title()
+
 
 class TestPlotRunHistory:
     """Tests for plot_run_history — plotting a saved run from its path alone."""

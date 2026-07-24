@@ -219,6 +219,73 @@ class TestOptimisationRunRun:
         result = run.run()
         assert result["stop_reason"] == "ei_threshold"
 
+    def test_convergence_snapshot_populated_with_store_snapshots(self) -> None:
+        """Test that the converging fit's GP/EI state is captured.
+
+        Regression test for the bug where the fit that triggers
+        ei_threshold convergence was computed but never recorded anywhere,
+        making the last visible snapshot look like it stopped one
+        iteration early with EI still above threshold.
+        """
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
+            max_iterations=50,
+            ei_threshold=1.0,  # very high — should stop immediately
+            n_candidates=50,
+            training_iter=10,
+            store_snapshots=True,
+        )
+        result = run.run()
+
+        assert result["stop_reason"] == "ei_threshold"
+        assert run._convergence_snapshot is not None
+        snapshot = run._convergence_snapshot
+        assert snapshot["max_ei"] < run.ei_threshold
+        for key in ("candidates", "f_mean", "f_var", "ei_scores", "train_x", "train_y"):
+            assert key in snapshot
+        # The converging fit was never evaluated, so it must not carry
+        # evaluation-only fields.
+        assert "prediction_error" not in snapshot
+        assert "improvement" not in snapshot
+
+    def test_convergence_snapshot_absent_without_store_snapshots(self) -> None:
+        """Test that no convergence snapshot is captured when store_snapshots=False."""
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
+            max_iterations=50,
+            ei_threshold=1.0,
+            n_candidates=50,
+            training_iter=10,
+        )
+        result = run.run()
+
+        assert result["stop_reason"] == "ei_threshold"
+        assert run._convergence_snapshot is None
+
+    def test_convergence_snapshot_absent_when_max_iterations_stops(self) -> None:
+        """Test that no convergence snapshot is captured for a max_iterations stop."""
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, 2.0]),
+            max_iterations=5,
+            ei_threshold=1e-20,  # impossibly low — forces max_iterations stop
+            n_candidates=50,
+            training_iter=10,
+            store_snapshots=True,
+        )
+        result = run.run()
+
+        assert result["stop_reason"] == "max_iterations"
+        assert run._convergence_snapshot is None
+
     def test_results_accumulator_populated(self, simple_run: OptimisationRun) -> None:
         """Test that _results accumulator is populated after run()."""
         simple_run.run()
@@ -399,6 +466,41 @@ class TestOptimisationRunSnapshots:
 
         labels = [line.get_label() for line in ei_ax.get_lines()]
         assert any("ei_threshold" in label for label in labels)
+
+    def test_plot_iterations_includes_convergence_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the slider's last frame is the converging fit's own state.
+
+        Regression test: before the fix, the slider silently stopped one
+        frame short of the actual convergence-triggering EI value.
+        """
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
+            max_iterations=50,
+            ei_threshold=0.05,  # converges after a couple of iterations
+            n_candidates=50,
+            training_iter=10,
+            store_snapshots=True,
+        )
+        run.run()
+        run.plot_iterations()
+
+        evaluated_count = len(run._results)
+        slider = run._active_slider
+        assert slider.valmax == evaluated_count + 1
+
+        slider.set_val(slider.valmax)
+        gp_ax, _ = plt.gcf().axes[:2]
+        assert "converged" in gp_ax.get_title()
+        assert float(f"{run._convergence_snapshot['max_ei']:.6f}") < run.ei_threshold
 
     def test_slider_kept_alive_and_responsive(
         self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch

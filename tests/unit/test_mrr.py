@@ -277,6 +277,59 @@ class TestSaveHdf5:
             assert "candidates" in grp
             assert "f_mean" in grp
 
+    def test_convergence_snapshot_written_under_final(self, tmp_path: Path, dummy_data):
+        config, results = dummy_data
+        convergence_snapshot = {
+            "max_ei": 0.0009,
+            "next_point": 0.3,
+            "candidates": torch.tensor([0.1, 0.2]),
+            "f_mean": torch.tensor([0.1, 0.2]),
+            "f_var": torch.tensor([0.1, 0.2]),
+            "ei_scores": torch.tensor([0.1, 0.2]),
+        }
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config=config,
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 0.5]),
+            final_train_y=torch.tensor([1.0, 0.2]),
+            best_x=0.5,
+            best_y=0.2,
+            stop_reason="ei_threshold",
+            n_iterations=1,
+            convergence_snapshot=convergence_snapshot,
+        )
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            final = f["final"]
+            assert final.attrs["converged_max_ei"] == pytest.approx(0.0009)
+            assert final.attrs["converged_next_point"] == pytest.approx(0.3)
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                assert f"converged_{field}" in final
+
+    def test_no_convergence_fields_without_convergence_snapshot(
+        self, tmp_path: Path, dummy_data
+    ):
+        config, results = dummy_data
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config=config,
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 0.5]),
+            final_train_y=torch.tensor([1.0, 0.2]),
+            best_x=0.5,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=1,
+        )
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            final = f["final"]
+            assert "converged_max_ei" not in final.attrs
+            assert "converged_candidates" not in final
+
 
 class TestSetupFileLogger:
     def test_creates_run_log_file(self, tmp_path: Path):
