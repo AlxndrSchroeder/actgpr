@@ -224,6 +224,10 @@ The regression tier compares a fixed-seed run against `tests/regression/data/qua
 
 Pushing to `main` rebuilds and republishes the docs above via GitHub Pages (see `.github/workflows/ci.yml`), so the local `sphinx-build` command is for previewing changes before they merge.
 
+## Security
+
+Found a vulnerability? See [SECURITY.md](SECURITY.md) for how to report it privately.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
