@@ -348,6 +348,43 @@ class OptimisationRun:
             "store_snapshots": self.store_snapshots,
         }
 
+    def _write_mrr_record(
+        self,
+        actual_run_dir: Path,
+        run_start: datetime,
+        best_x: float,
+        best_y: float,
+        stop_reason: str,
+        n_iterations: int,
+    ) -> None:
+        """Write results.h5 and meta.json for the given outcome.
+
+        Shared by both the normal end-of-run finalization and the
+        best-effort checkpoint written on a mid-run crash.
+        """
+        mrr.save_hdf5(
+            actual_run_dir,
+            results=self._results,
+            config=self._config_dict(),
+            store_snapshots=self.store_snapshots,
+            final_train_x=self.train_x,
+            final_train_y=self.train_y,
+            best_x=best_x,
+            best_y=best_y,
+            stop_reason=stop_reason,
+            n_iterations=n_iterations,
+            convergence_snapshot=self._convergence_snapshot,
+        )
+        mrr.write_meta(
+            actual_run_dir,
+            run_start=run_start,
+            run_end=datetime.now(timezone.utc),
+            best_x=best_x,
+            best_y=best_y,
+            n_iterations=n_iterations,
+            stop_reason=stop_reason,
+        )
+
     def run(self) -> dict[str, object]:
         """Execute the optimisation loop.
 
@@ -366,6 +403,16 @@ class OptimisationRun:
             - "n_iterations": int — number of loop iterations executed.
             - "stop_reason": str — "ei_threshold" if EI dropped below
               ei_threshold, "max_iterations" if budget cap was reached.
+
+        Raises
+        ------
+        Exception
+            Any exception raised while fitting the surrogate or evaluating
+            the objective propagates unchanged. If ``run_dir`` was given, a
+            best-effort results.h5/meta.json checkpoint covering every
+            iteration completed before the failure is written first (with
+            ``stop_reason="crashed"``), so a mid-run crash only loses the
+            incomplete iteration rather than the whole run.
         """
         # ── MRR: setup (only if run_dir provided) ──
         logger = logging.getLogger("actgpr")
@@ -410,31 +457,10 @@ class OptimisationRun:
             best_x = self.train_x[best_idx].item()
             best_y = self.train_y[best_idx].item()
 
-            run_end = datetime.now(timezone.utc)
-
             # ── MRR: finalize (only if run_dir provided) ──
             if actual_run_dir is not None:
-                mrr.save_hdf5(
-                    actual_run_dir,
-                    results=self._results,
-                    config=self._config_dict(),
-                    store_snapshots=self.store_snapshots,
-                    final_train_x=self.train_x,
-                    final_train_y=self.train_y,
-                    best_x=best_x,
-                    best_y=best_y,
-                    stop_reason=stop_reason,
-                    n_iterations=n_iterations,
-                    convergence_snapshot=self._convergence_snapshot,
-                )
-                mrr.write_meta(
-                    actual_run_dir,
-                    run_start=run_start,
-                    run_end=run_end,
-                    best_x=best_x,
-                    best_y=best_y,
-                    n_iterations=n_iterations,
-                    stop_reason=stop_reason,
+                self._write_mrr_record(
+                    actual_run_dir, run_start, best_x, best_y, stop_reason, n_iterations
                 )
 
             return {
@@ -445,6 +471,30 @@ class OptimisationRun:
                 "n_iterations": n_iterations,
                 "stop_reason": stop_reason,
             }
+        except Exception:
+            # Best-effort checkpoint: self.train_x/train_y/_results only
+            # ever reflect fully-completed iterations (appended after each
+            # iteration's data is snapshotted, see _run_loop step 7), so
+            # they're safe to persist even mid-crash — otherwise a failure
+            # on iteration 19 of 20 would discard the whole run instead of
+            # losing just the incomplete iteration.
+            if actual_run_dir is not None:
+                crash_best_idx = torch.argmin(self.train_y)
+                crash_best_x = self.train_x[crash_best_idx].item()
+                crash_best_y = self.train_y[crash_best_idx].item()
+                self._write_mrr_record(
+                    actual_run_dir,
+                    run_start,
+                    crash_best_x,
+                    crash_best_y,
+                    stop_reason="crashed",
+                    n_iterations=len(self._results),
+                )
+                logger.error(
+                    f"Run crashed after {len(self._results)} completed "
+                    f"iterations — checkpoint written to {actual_run_dir}"
+                )
+            raise
         finally:
             # Detach the run.log handler even if the loop raises — a leaked
             # handler would duplicate every log line in a later run() and
@@ -503,8 +553,10 @@ class OptimisationRun:
             # 5. Validation metrics
             # improvement Δᵢ = y_best before this iteration − y_best after it;
             # zero when the new point does not improve on current_best.
-            best_idx = torch.argmax(self._acq.ei_scores)
-            predicted_y = self._acq.f_mean[best_idx].item()
+            # next_point_mean is the surrogate's mean at next_point itself
+            # (post zoom-refinement) — not one of the coarse f_mean entries,
+            # which cover the candidate grid rather than next_point exactly.
+            predicted_y = self._acq.next_point_mean
             prediction_error = predicted_y - new_y
             improvement = max(0.0, current_best - new_y)
 

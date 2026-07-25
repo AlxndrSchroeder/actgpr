@@ -43,6 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `OptimisationRun.run()` wrote `results.h5`/`meta.json` only after the loop
+  finished, so a crash mid-run (e.g. iteration 19 of 20) discarded every
+  completed iteration, leaving only `config.json`/`manifest.json`/`run.log`
+  behind. On an unhandled exception, `run()` now writes a best-effort
+  `results.h5`/`meta.json` checkpoint (`stop_reason="crashed"`) covering
+  every iteration completed before the failure, then re-raises
+- `prediction_error` compared the objective's actual output against the
+  surrogate's predicted mean at the coarse candidate grid's EI-argmax —
+  not at `next_point` itself, which the EI zoom-refinement fix above can
+  now shift away from that exact grid point. `Acquisition` now tracks
+  `next_point_mean`, the predicted mean at the refined `next_point`, and
+  `prediction_error` is computed against that instead
+- `Acquisition.find_next_input_point()` was limited to the resolution of its
+  coarse candidate grid: once the grid point nearest the true EI maximum had
+  been evaluated, its posterior variance stopped shrinking enough to let any
+  neighbouring grid point win, so the run kept re-selecting the same point
+  and stalled short of the true optimum. A second, much finer grid confined
+  to a small window around the coarse best point is now scored and used to
+  refine `next_point`, recovering precision well beyond the coarse grid's
+  spacing
 - The GP/EI fit that triggers `ei_threshold` convergence was computed but
   never recorded: `plot_iterations()`'s slider silently stopped one frame
   short, showing the second-to-last state (still above `ei_threshold`) as

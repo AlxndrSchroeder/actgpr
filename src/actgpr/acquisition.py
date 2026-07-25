@@ -59,6 +59,10 @@ class Acquisition:
         self.f_var: torch.Tensor | None = None
         self.f_covar: torch.Tensor | None = None
         self.ei_scores: torch.Tensor | None = None
+        # The surrogate's posterior mean at the returned next_point itself
+        # (post zoom-refinement) — distinct from f_mean, which covers only
+        # the coarse candidate grid and may not include next_point exactly.
+        self.next_point_mean: float | None = None
 
     def expected_improvement(
         self,
@@ -141,7 +145,11 @@ class Acquisition:
 
         Generates a dense grid of candidate points within the search bounds,
         predicts posterior mean and variance using the surrogate, scores them
-        with Expected Improvement, and returns the candidate with the highest score.
+        with Expected Improvement, and locates the candidate with the highest
+        score. That coarse grid's spacing caps how precisely the true EI
+        maximum can be located, so a second, much finer grid is then scored
+        inside a small window around the coarse best point, and the refined
+        maximum is returned instead.
 
         Parameters
         ----------
@@ -151,7 +159,8 @@ class Acquisition:
         Returns
         -------
         float
-            The input point with the highest EI score.
+            The input point with the highest EI score, refined beyond the
+            coarse grid's resolution.
 
         Raises
         ------
@@ -174,7 +183,27 @@ class Acquisition:
         )
 
         best_index = torch.argmax(self.ei_scores)
-        return self.candidates[best_index].item()
+        coarse_best_x = self.candidates[best_index].item()
+
+        # Zoom-refine: the coarse grid can only locate the EI maximum to
+        # within one grid spacing. Re-score a much finer grid confined to a
+        # small window around the coarse best point — cheap, since the
+        # window is a tiny fraction of the full search bounds — to recover
+        # precision the coarse grid alone can't offer.
+        spacing = (hi - lo) / (self.n_candidates - 1)
+        window = 2 * spacing
+        fine_lo = max(lo, coarse_best_x - window)
+        fine_hi = min(hi, coarse_best_x + window)
+        fine_candidates = torch.linspace(fine_lo, fine_hi, self.n_candidates)
+
+        fine_preds = self.surrogate.predict(fine_candidates)
+        fine_ei = self.expected_improvement(
+            fine_preds["f_mean"], fine_preds["f_var"], current_best
+        )
+
+        fine_best_index = torch.argmax(fine_ei)
+        self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
+        return fine_candidates[fine_best_index].item()
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the Acquisition."""

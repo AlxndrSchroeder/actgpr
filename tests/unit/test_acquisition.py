@@ -148,3 +148,81 @@ class TestFindNextInputPoint:
         result_b = acq_b.find_next_input_point(current_best=0.0)
 
         assert result_a == result_b
+
+
+class TestZoomRefinement:
+    """Tests for the fine-grid refinement step in find_next_input_point()."""
+
+    def test_stored_candidates_still_span_full_search_bounds(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that self.candidates stays the coarse grid used for plotting.
+
+        The fine grid used to refine the returned point is local and
+        internal — it must not replace the coarse candidates/f_mean/f_var/
+        ei_scores arrays that plot_iteration_snapshot() relies on to draw
+        the full EI landscape.
+        """
+        acquisition.find_next_input_point(current_best=0.0)
+
+        lo, hi = acquisition.search_bounds
+        expected_coarse_grid = torch.linspace(lo, hi, acquisition.n_candidates)
+
+        assert acquisition.candidates.shape == (acquisition.n_candidates,)
+        assert torch.allclose(acquisition.candidates, expected_coarse_grid)
+        assert acquisition.ei_scores.shape == (acquisition.n_candidates,)
+
+    def test_refined_point_can_fall_between_coarse_grid_points(
+        self, fitted_surrogate: GPyTorchSurrogate
+    ) -> None:
+        """Test that refinement is not limited to the coarse grid's spacing.
+
+        With a deliberately coarse grid (few candidates), the true EI
+        maximum is very unlikely to sit exactly on a grid point — refinement
+        should be able to land strictly between two of them.
+        """
+        acq = Acquisition(fitted_surrogate, search_bounds=(-3.0, 4.0), n_candidates=6)
+        coarse_grid = torch.linspace(-3.0, 4.0, 6)
+
+        result = acq.find_next_input_point(current_best=0.0)
+
+        assert not torch.any(torch.isclose(coarse_grid, torch.tensor(result)))
+
+    def test_refinement_does_not_regress_below_coarse_grid_max(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that the refined point's EI is at least as good as the coarse max.
+
+        The fine grid samples densely around the coarse best point, so it
+        should always find an EI at least as high as the single coarse-grid
+        sample did — refinement should sharpen the estimate, never worsen it.
+        """
+        current_best = 0.0
+        result = acquisition.find_next_input_point(current_best)
+        coarse_max_ei = acquisition.ei_scores.max().item()
+
+        preds = acquisition.surrogate.predict(torch.tensor([result]))
+        refined_ei = acquisition.expected_improvement(
+            preds["f_mean"], preds["f_var"], current_best
+        ).item()
+
+        assert refined_ei >= coarse_max_ei - 1e-6
+
+    def test_next_point_mean_matches_prediction_at_next_point(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that next_point_mean is the surrogate's mean at next_point itself.
+
+        next_point generally falls strictly between two coarse grid points
+        after zoom-refinement, so next_point_mean must not be read off the
+        coarse f_mean array (which only covers the coarse grid) — it has to
+        come from a prediction at next_point directly.
+        """
+        current_best = 0.0
+        result = acquisition.find_next_input_point(current_best)
+
+        expected_mean = acquisition.surrogate.predict(torch.tensor([result]))[
+            "f_mean"
+        ].item()
+
+        assert acquisition.next_point_mean == pytest.approx(expected_mean)
