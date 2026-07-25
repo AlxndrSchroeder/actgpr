@@ -553,8 +553,10 @@ class OptimisationRun:
             # 5. Validation metrics
             # improvement Δᵢ = y_best before this iteration − y_best after it;
             # zero when the new point does not improve on current_best.
-            best_idx = torch.argmax(self._acq.ei_scores)
-            predicted_y = self._acq.f_mean[best_idx].item()
+            # next_point_mean is the surrogate's mean at next_point itself
+            # (post zoom-refinement) — not one of the coarse f_mean entries,
+            # which cover the candidate grid rather than next_point exactly.
+            predicted_y = self._acq.next_point_mean
             prediction_error = predicted_y - new_y
             improvement = max(0.0, current_best - new_y)
 

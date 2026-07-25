@@ -207,3 +207,22 @@ class TestZoomRefinement:
         ).item()
 
         assert refined_ei >= coarse_max_ei - 1e-6
+
+    def test_next_point_mean_matches_prediction_at_next_point(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that next_point_mean is the surrogate's mean at next_point itself.
+
+        next_point generally falls strictly between two coarse grid points
+        after zoom-refinement, so next_point_mean must not be read off the
+        coarse f_mean array (which only covers the coarse grid) — it has to
+        come from a prediction at next_point directly.
+        """
+        current_best = 0.0
+        result = acquisition.find_next_input_point(current_best)
+
+        expected_mean = acquisition.surrogate.predict(torch.tensor([result]))[
+            "f_mean"
+        ].item()
+
+        assert acquisition.next_point_mean == pytest.approx(expected_mean)

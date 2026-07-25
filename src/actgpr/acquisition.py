@@ -59,6 +59,10 @@ class Acquisition:
         self.f_var: torch.Tensor | None = None
         self.f_covar: torch.Tensor | None = None
         self.ei_scores: torch.Tensor | None = None
+        # The surrogate's posterior mean at the returned next_point itself
+        # (post zoom-refinement) — distinct from f_mean, which covers only
+        # the coarse candidate grid and may not include next_point exactly.
+        self.next_point_mean: float | None = None
 
     def expected_improvement(
         self,
@@ -198,6 +202,7 @@ class Acquisition:
         )
 
         fine_best_index = torch.argmax(fine_ei)
+        self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
         return fine_candidates[fine_best_index].item()
 
     def __repr__(self) -> str:
