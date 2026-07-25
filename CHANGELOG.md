@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Acquisition.find_next_input_point()` was limited to the resolution of its
+  coarse candidate grid: once the grid point nearest the true EI maximum had
+  been evaluated, its posterior variance stopped shrinking enough to let any
+  neighbouring grid point win, so the run kept re-selecting the same point
+  and stalled short of the true optimum. A second, much finer grid confined
+  to a small window around the coarse best point is now scored and used to
+  refine `next_point`, recovering precision well beyond the coarse grid's
+  spacing
 - The GP/EI fit that triggers `ei_threshold` convergence was computed but
   never recorded: `plot_iterations()`'s slider silently stopped one frame
   short, showing the second-to-last state (still above `ei_threshold`) as

@@ -183,7 +183,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 | **Candidates / `n_candidates`** | The evenly spaced grid of points within the search bounds that EI scores (default 500). "Candidates" refers only to this acquisition grid — never to training data. |
 | **`ei_scores`** | The EI value of every candidate. |
 | **`max_ei`** | The largest EI score in an iteration; compared against `ei_threshold` for convergence. |
-| **`next_point`** | The candidate with the highest EI — the next input point to evaluate. |
+| **`next_point`** | The next input point to evaluate. Found by taking the candidate grid's highest-EI point, then zoom-refining with a second, much finer grid confined to a small window around it — so `next_point` is not limited to the coarse grid's spacing and generally falls strictly between two candidates. |
 | **Current best** | The smallest Objective value observed so far. |
 
 ### The optimisation loop
