@@ -1,8 +1,10 @@
 """Unit tests for the OptimisationRun class."""
 
+import json
 import logging
 from pathlib import Path
 
+import h5py
 import pytest
 import torch
 
@@ -337,11 +339,95 @@ class TestOptimisationRunRun:
 
         assert len(logger.handlers) == n_handlers_before
 
-        # config.json and manifest.json still exist as the crash trace
+        # All 5 MRR artifacts still exist as the crash trace, including a
+        # best-effort results.h5/meta.json checkpoint (see test_checkpoint_*
+        # below for their content) even though zero iterations completed.
         (run_dir,) = list(tmp_path.iterdir())
         assert (run_dir / "config.json").exists()
         assert (run_dir / "manifest.json").exists()
         assert (run_dir / "run.log").exists()
+        assert (run_dir / "results.h5").exists()
+        assert (run_dir / "meta.json").exists()
+
+    def test_checkpoint_written_on_crash_with_partial_results(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that a crash checkpoints every iteration completed so far."""
+        calls = {"count": 0}
+
+        def flaky(x: float) -> float:
+            """Succeed for the 2 initial points and 2 loop iterations, then fail."""
+            calls["count"] += 1
+            if calls["count"] > 4:
+                raise RuntimeError("objective backend failure")
+            return x**2
+
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(flaky),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=5,
+            ei_threshold=1e-12,
+            n_candidates=50,
+            run_dir=tmp_path,
+        )
+
+        with pytest.raises(RuntimeError, match="objective backend failure"):
+            run.run()
+
+        assert len(run._results) == 2
+
+        (run_dir,) = list(tmp_path.iterdir())
+        with h5py.File(run_dir / "results.h5", "r") as f:
+            assert len(f["history/iteration"]) == 2
+            assert f["final"].attrs["stop_reason"] == "crashed"
+            assert f["final"].attrs["n_iterations"] == 2
+            # final/train_x holds only the points evaluated before the
+            # crash: the 2 initial points plus the 2 completed iterations.
+            assert len(f["final/train_x"]) == 4
+
+        meta = json.loads((run_dir / "meta.json").read_text())
+        assert meta["output_summary"]["stop_reason"] == "crashed"
+        assert meta["output_summary"]["n_iterations"] == 2
+
+    def test_checkpoint_written_on_crash_before_any_iteration_completes(
+        self, tmp_path: Path
+    ) -> None:
+        """Test the degenerate case: the crash happens before iteration 1 finishes."""
+        calls = {"count": 0}
+
+        def flaky(x: float) -> float:
+            """Succeed for the 2 initial points, then fail immediately."""
+            calls["count"] += 1
+            if calls["count"] > 2:
+                raise RuntimeError("objective backend failure")
+            return x**2
+
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(flaky),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=5,
+            ei_threshold=1e-12,
+            n_candidates=50,
+            run_dir=tmp_path,
+        )
+
+        with pytest.raises(RuntimeError, match="objective backend failure"):
+            run.run()
+
+        assert run._results == []
+
+        (run_dir,) = list(tmp_path.iterdir())
+        with h5py.File(run_dir / "results.h5", "r") as f:
+            assert len(f["history/iteration"]) == 0
+            assert f["final"].attrs["stop_reason"] == "crashed"
+            assert f["final"].attrs["n_iterations"] == 0
+            # best_x/best_y fall back to the 2 initial points, the only
+            # data that exists yet.
+            assert f["final"].attrs["best_y"] == pytest.approx(4.0)
 
     def test_custom_objective_converges(self) -> None:
         """Test that the loop works with a custom objective function."""
