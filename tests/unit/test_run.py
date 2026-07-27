@@ -155,6 +155,34 @@ class TestOptimisationRunRun:
         }
         assert set(result.keys()) == expected_keys
 
+    def test_run_log_ends_with_result_summary(self, tmp_path: Path) -> None:
+        """Test that run.log's final line reports best_x/best_y, not just per-iteration data.
+
+        So the identified minimum can be read straight off run.log without
+        opening results.h5 or keeping the run() return value around.
+        """
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
+            max_iterations=10,
+            ei_threshold=0.01,
+            n_candidates=100,
+            training_iter=20,
+            run_dir=tmp_path,
+        )
+        result = run.run()
+
+        (run_dir,) = list(tmp_path.iterdir())
+        log_text = (run_dir / "run.log").read_text()
+
+        assert "Finished" in log_text
+        assert f"best_x={result['best_x']:.6f}" in log_text
+        assert f"best_y={result['best_y']:.6f}" in log_text
+        assert result["stop_reason"] in log_text
+
     def test_best_y_is_float(self, simple_run: OptimisationRun) -> None:
         """Test that best_y is a Python float."""
         result = simple_run.run()
