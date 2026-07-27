@@ -169,3 +169,83 @@ class TestMrrArtifacts:
             first = f["iterations/iter_001"]
             for name in ("candidates", "f_mean", "f_var", "ei_scores"):
                 assert first[name].shape == (200,)
+
+
+class TestMrrArtifactsOnCrash:
+    """End-to-end verification that the MRR record survives a mid-run crash.
+
+    Complements TestMrrArtifacts (the success path) by checking that all 5
+    artifacts — not just the pieces exercised individually in the run.py
+    unit tests — still form a coherent, readable record together when the
+    Objective raises partway through.
+    """
+
+    @pytest.fixture()
+    def crashed_run_dir(self, tmp_path: Path) -> Path:
+        """Execute a run whose Objective fails after 2 initial + 2 loop evaluations."""
+        calls = {"count": 0}
+
+        def flaky(x: float) -> float:
+            """Succeed like x² for 4 calls (2 initial points, 2 iterations), then fail."""
+            calls["count"] += 1
+            if calls["count"] > 4:
+                raise RuntimeError("objective backend failure")
+            return x**2
+
+        torch.manual_seed(SEED)
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(flaky),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-4.0, 4.0),
+            initial_train_x=[-3.0, 3.0],
+            max_iterations=8,
+            ei_threshold=1e-9,
+            n_candidates=200,
+            lengthscale=1.0,
+            outputscale=1.0,
+            noise=1e-4,
+            run_dir=tmp_path,
+        )
+
+        with pytest.raises(RuntimeError, match="objective backend failure"):
+            run.run()
+
+        (run_dir,) = list(tmp_path.iterdir())
+        return run_dir
+
+    def test_writes_all_five_artifacts(self, crashed_run_dir: Path) -> None:
+        """Test that every MRR artifact still exists after a crash."""
+        for artifact in MRR_ARTIFACTS:
+            assert (
+                crashed_run_dir / artifact
+            ).exists(), f"missing artifact: {artifact}"
+
+    def test_results_h5_and_meta_agree_on_partial_progress(
+        self, crashed_run_dir: Path
+    ) -> None:
+        """Test that results.h5 and meta.json consistently report the crash.
+
+        Both files are written independently by _write_mrr_record(); this
+        checks they stay in sync rather than one lagging the other.
+        """
+        meta = json.loads((crashed_run_dir / "meta.json").read_text())
+        summary = meta["output_summary"]
+
+        with h5py.File(crashed_run_dir / "results.h5", "r") as f:
+            history = f["history"]
+            final = f["final"]
+
+            # 2 loop iterations completed before the 5th evaluate() call failed
+            assert len(history["iteration"]) == 2
+            assert final.attrs["n_iterations"] == 2
+            assert summary["n_iterations"] == 2
+
+            assert final.attrs["stop_reason"] == "crashed"
+            assert summary["stop_reason"] == "crashed"
+
+            assert final.attrs["best_x"] == pytest.approx(summary["best_x"])
+            assert final.attrs["best_y"] == pytest.approx(summary["best_y"])
+            # final/train_x holds only the 2 initial points + 2 completed
+            # iterations — the point that triggered the crash was never
+            # appended to training data.
+            assert len(f["final/train_x"]) == 4

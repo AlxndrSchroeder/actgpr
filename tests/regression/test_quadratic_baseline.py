@@ -69,3 +69,19 @@ def test_quadratic_run_matches_baseline() -> None:
         f"{baseline.shape[0]} — the loop behaviour changed"
     )
     np.testing.assert_allclose(actual, baseline, rtol=1e-6, atol=1e-12)
+
+
+def test_execute_baseline_run_is_deterministic() -> None:
+    """Test that the baseline run is reproducible independent of the stored CSV.
+
+    Matching the stored baseline only proves the run matches a single past
+    snapshot — it says nothing about whether execute_baseline_run() itself
+    is actually deterministic (e.g. a stray unseeded random call would still
+    pass test_quadratic_run_matches_baseline once, by definition, since that
+    snapshot IS whatever ran when it was captured). Running it twice and
+    comparing directly checks the reproducibility claim itself.
+    """
+    result_a = execute_baseline_run()
+    result_b = execute_baseline_run()
+
+    np.testing.assert_array_equal(result_a, result_b)
