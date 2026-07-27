@@ -457,6 +457,11 @@ class OptimisationRun:
             best_x = self.train_x[best_idx].item()
             best_y = self.train_y[best_idx].item()
 
+            logger.info(
+                f"Finished after {n_iterations} iterations ({stop_reason}): "
+                f"best_x={best_x:.6f}, best_y={best_y:.6f}"
+            )
+
             # ── MRR: finalize (only if run_dir provided) ──
             if actual_run_dir is not None:
                 self._write_mrr_record(

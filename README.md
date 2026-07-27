@@ -108,8 +108,10 @@ When `run_dir` is given, each run creates a timestamped **run directory** (named
 | `config.json` | All run parameters (written at start — survives crashes) |
 | `manifest.json` | SHA-256 checksum of the inputs |
 | `meta.json` | Environment: package name/version, repository, git commit, Python/library versions, platform, timestamps, output summary |
-| `run.log` | Per-iteration audit trail |
+| `run.log` | Per-iteration audit trail, ending with a summary line giving `best_x`/`best_y` |
 | `results.h5` | Self-describing HDF5 with all numerical results |
+
+If the run raises partway through, `meta.json` and `results.h5` are still written as a best-effort checkpoint covering every iteration completed before the failure (`stop_reason="crashed"`), and `run.log` ends with an error line instead of the summary line.
 
 `results.h5` layout:
 

@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plotting.plot_run_history(run_dir)` builds the `prediction_error` /
   `improvement` vs. iteration plot directly from a saved run's `results.h5`
   — no `OptimisationRun` object needed
+- `run.log` now ends with a summary line giving `best_x`/`best_y`/
+  `stop_reason`, so the identified minimum can be read straight off the log
+  without opening `results.h5` or holding onto `run.run()`'s return value
 
 ### Changed
 
