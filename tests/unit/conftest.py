@@ -1,6 +1,7 @@
 """Shared fixtures for unit tests."""
 
 import math
+from typing import Callable
 
 import matplotlib.pyplot as plt
 import pytest
@@ -50,3 +51,27 @@ def fitted_model(
     model = GPyTorchSurrogate()
     model.fit_and_train(train_x, train_y, training_iter=20)
     return model
+
+
+@pytest.fixture()
+def flaky_objective() -> Callable[[int], ObjectiveFn]:
+    """Return a factory for an ObjectiveFn that fails after a fixed call count.
+
+    ``flaky_objective(n_successes)`` behaves like x² for its first
+    ``n_successes`` evaluate() calls, then raises RuntimeError on every call
+    after that — used to test crash/checkpoint behaviour without a real
+    backend failure.
+    """
+
+    def _make(n_successes: int) -> ObjectiveFn:
+        calls = {"count": 0}
+
+        def flaky(x: float) -> float:
+            calls["count"] += 1
+            if calls["count"] > n_successes:
+                raise RuntimeError("objective backend failure")
+            return x**2
+
+        return ObjectiveFn(flaky)
+
+    return _make

@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Callable
 
 import h5py
 import pytest
@@ -336,19 +337,12 @@ class TestOptimisationRunRun:
             expected = max(0.0, entry["current_best"] - entry["new_y"])
             assert entry["improvement"] == pytest.approx(expected)
 
-    def test_file_logger_detached_after_crash(self, tmp_path: Path) -> None:
+    def test_file_logger_detached_after_crash(
+        self, tmp_path: Path, flaky_objective: Callable[[int], ObjectiveFn]
+    ) -> None:
         """Test that the run.log handler is removed when the loop raises."""
-        calls = {"count": 0}
-
-        def flaky(x: float) -> float:
-            """Evaluate x² for the initial points, then fail inside the loop."""
-            calls["count"] += 1
-            if calls["count"] > 2:
-                raise RuntimeError("objective backend failure")
-            return x**2
-
         run = OptimisationRun.without_training(
-            objective=ObjectiveFn(flaky),
+            objective=flaky_objective(2),  # succeeds for the 2 initial points only
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=[-2.0, 2.0],
@@ -378,20 +372,11 @@ class TestOptimisationRunRun:
         assert (run_dir / "meta.json").exists()
 
     def test_checkpoint_written_on_crash_with_partial_results(
-        self, tmp_path: Path
+        self, tmp_path: Path, flaky_objective: Callable[[int], ObjectiveFn]
     ) -> None:
         """Test that a crash checkpoints every iteration completed so far."""
-        calls = {"count": 0}
-
-        def flaky(x: float) -> float:
-            """Succeed for the 2 initial points and 2 loop iterations, then fail."""
-            calls["count"] += 1
-            if calls["count"] > 4:
-                raise RuntimeError("objective backend failure")
-            return x**2
-
         run = OptimisationRun.without_training(
-            objective=ObjectiveFn(flaky),
+            objective=flaky_objective(4),  # 2 initial points + 2 loop iterations
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=[-2.0, 2.0],
@@ -420,20 +405,11 @@ class TestOptimisationRunRun:
         assert meta["output_summary"]["n_iterations"] == 2
 
     def test_checkpoint_written_on_crash_before_any_iteration_completes(
-        self, tmp_path: Path
+        self, tmp_path: Path, flaky_objective: Callable[[int], ObjectiveFn]
     ) -> None:
         """Test the degenerate case: the crash happens before iteration 1 finishes."""
-        calls = {"count": 0}
-
-        def flaky(x: float) -> float:
-            """Succeed for the 2 initial points, then fail immediately."""
-            calls["count"] += 1
-            if calls["count"] > 2:
-                raise RuntimeError("objective backend failure")
-            return x**2
-
         run = OptimisationRun.without_training(
-            objective=ObjectiveFn(flaky),
+            objective=flaky_objective(2),  # succeeds for the 2 initial points only
             surrogate=GPyTorchSurrogate(),
             search_bounds=(-3.0, 3.0),
             initial_train_x=[-2.0, 2.0],
