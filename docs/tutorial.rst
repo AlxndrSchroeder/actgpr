@@ -143,9 +143,17 @@ Because ``run_dir`` was given, the run created a timestamped folder under
 - ``manifest.json`` — a SHA-256 checksum of the inputs
 - ``meta.json`` — environment: package name, version, and repository, git
   commit, Python/library versions, platform, timestamps, and output summary
-- ``run.log`` — a human-readable, per-iteration audit trail
+- ``run.log`` — a human-readable, per-iteration audit trail, ending with a
+  summary line giving ``best_x``/``best_y`` — the quickest way to read off
+  the identified minimum without opening ``results.h5`` or inspecting the
+  ``run.run()`` return value
 - ``results.h5`` — self-describing HDF5: configuration is stored as
   attributes alongside the data, so the file can be understood on its own
+
+If the run raises partway through, ``meta.json`` and ``results.h5`` are
+still written — a best-effort checkpoint covering every iteration completed
+before the failure (``stop_reason="crashed"``) — and ``run.log`` ends with
+an error line instead of the summary line.
 
 Revisiting a saved run
 ~~~~~~~~~~~~~~~~~~~~~~~
