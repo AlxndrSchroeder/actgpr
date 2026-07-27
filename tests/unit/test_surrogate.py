@@ -144,6 +144,81 @@ class TestGPyTorchSurrogateFit:
 
 
 # ---------------------------------------------------------------------------
+# GPyTorchSurrogate.fit_no_training
+# ---------------------------------------------------------------------------
+
+
+class TestGPyTorchSurrogateFitNoTraining:
+    """Tests for GPyTorchSurrogate.fit_no_training() — the without_training() backend."""
+
+    def test_fit_no_training_populates_model_and_likelihood(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that fit_no_training() creates a model and likelihood."""
+        train_x, train_y = training_data
+        model = GPyTorchSurrogate()
+        model.fit_no_training(train_x, train_y)
+
+        assert model.model is not None
+        assert model.likelihood is not None
+        assert model.train_x is not None
+        assert model.train_y is not None
+
+    def test_fit_no_training_sets_given_hyperparameters(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that lengthscale/outputscale/noise are set to the given values, not tuned."""
+        train_x, train_y = training_data
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            train_x, train_y, lengthscale=2.5, outputscale=3.0, noise=0.02
+        )
+
+        assert model.model.covar_module.base_kernel.lengthscale.item() == pytest.approx(
+            2.5
+        )
+        assert model.model.covar_module.outputscale.item() == pytest.approx(3.0)
+        assert model.likelihood.noise.item() == pytest.approx(0.02)
+
+    def test_fit_no_training_freezes_all_parameters(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that no parameter is left trainable — without_training() must not tune anything."""
+        train_x, train_y = training_data
+        model = GPyTorchSurrogate()
+        model.fit_no_training(train_x, train_y)
+
+        assert all(not p.requires_grad for p in model.model.parameters())
+        assert all(not p.requires_grad for p in model.likelihood.parameters())
+
+    def test_fit_no_training_predictions_reflect_fixed_outputscale(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that the fixed hyperparameters actually drive predictions.
+
+        A larger outputscale should widen posterior variance away from the
+        training data relative to a smaller one — confirms fit_no_training's
+        values are used at predict time rather than silently overridden by
+        some default.
+        """
+        train_x, train_y = training_data
+        small_scale = GPyTorchSurrogate()
+        small_scale.fit_no_training(train_x, train_y, outputscale=0.1)
+        large_scale = GPyTorchSurrogate()
+        large_scale.fit_no_training(train_x, train_y, outputscale=10.0)
+
+        test_x = torch.tensor([5.0])  # away from training data
+        var_small = small_scale.predict(test_x)["f_var"].item()
+        var_large = large_scale.predict(test_x)["f_var"].item()
+
+        assert var_large > var_small
+
+
+# ---------------------------------------------------------------------------
 # GPyTorchSurrogate.predict
 # ---------------------------------------------------------------------------
 
