@@ -234,6 +234,12 @@ The regression tier compares a fixed-seed run against `tests/regression/data/qua
 
 Pushing to `main` rebuilds and republishes the docs above via GitHub Pages (see `.github/workflows/ci.yml`), so the local `sphinx-build` command is for previewing changes before they merge.
 
+## Contributing
+
+Bug reports, enhancement requests, and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to report issues, the branch/PR
+workflow, and the coding standards CI enforces.
+
 ## Security
 
 Found a vulnerability? See [SECURITY.md](SECURITY.md) for how to report it privately.
