@@ -1,6 +1,7 @@
 # actgpr
 
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13772/badge)](https://www.bestpractices.dev/projects/13772)
+[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/13772/badge)](https://bestpractices.coreinfrastructure.org/projects/13772)
+[![fair-software.eu](https://img.shields.io/badge/fair--software.eu-%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8B%20%20%E2%97%8F%20%20%E2%97%8F-yellow)](https://fair-software.eu)
 
 **Active GPR (Gaussian Process Regression) Optimisation** — a Python package that finds the minimum of a scalar blackbox function by iteratively fitting a Gaussian Process surrogate and using Expected Improvement to pick the most informative next evaluation point.
 
