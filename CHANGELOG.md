@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-28
+
 ### Added
 
 - `plot_acquisition()` now marks the highest EI score at `next_point` with
@@ -30,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `run.log` now ends with a summary line giving `best_x`/`best_y`/
   `stop_reason`, so the identified minimum can be read straight off the log
   without opening `results.h5` or holding onto `run.run()`'s return value
+- `CONTRIBUTING.md` documents how to report bugs/enhancements, the branch/PR
+  workflow, and the coding standards CI enforces; linked from the README
+- OpenSSF Best Practices and fair-software.eu compliance badges added to
+  the README
 
 ### Changed
 
