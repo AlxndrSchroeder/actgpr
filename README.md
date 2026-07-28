@@ -145,7 +145,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 
 | Term | Meaning |
 |---|---|
-| **Objective** | The real-valued scalar function being minimised — your blackbox function, wrapped by `ObjectiveFn`. Defaults to `f(x) = x²` (handy for tutorials and tests). |
+| **Objective** | The real-valued scalar function being minimised — your blackbox, wrapped as anything exposing `.evaluate(*x) -> tuple[float, ...]` (e.g. `ObjectiveFn`, or your own class). Defaults to `f(x) = x²` (handy for tutorials and tests). |
 | **Analytic objective** | An Objective computed by a mathematical formula (e.g. `x²`) — used for development and testing. |
 | **Experiment objective** | An Objective whose output comes from a real-world measurement or instrument (planned). |
 | **`train_x`** (or `x`) | The input points passed to the Objective. |

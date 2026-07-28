@@ -14,13 +14,20 @@ Setup
    cd actgpr
    poetry install
 
-Step 1 — wrap your blackbox function
-------------------------------------
+Step 1 — give it an Objective
+------------------------------
 
-``actgpr`` minimises a scalar blackbox function: something that takes one
-float and returns one float. In practice that might launch a simulation or
-trigger an experiment — here we use an analytic stand-in so the tutorial
-runs instantly:
+``actgpr`` minimises anything exposing ``evaluate(*x: float) -> tuple[float,
+...]`` — it never checks whether that object is a particular type, only
+that the method exists (duck typing). Which of the two ways below to use
+depends on what you're wrapping.
+
+Wrapping a plain function
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``ObjectiveFn``, a convenience that turns any
+``Callable[[float], float]`` into an Objective — the right choice when your
+blackbox is already a simple function:
 
 .. code-block:: python
 
@@ -32,8 +39,7 @@ runs instantly:
 
    objective = ObjectiveFn(my_blackbox)
 
-``ObjectiveFn`` turns any ``Callable[[float], float]`` into an Objective.
-Its ``evaluate`` method accepts one or more input points and returns a tuple
+``objective.evaluate`` accepts one or more input points and returns a tuple
 of outputs:
 
 .. code-block:: python
@@ -43,6 +49,35 @@ of outputs:
 
 Errors raised inside your function propagate unchanged, so you can handle
 them by their original type.
+
+Wrapping your own simulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you already have a simulation or experiment of your own — not just a
+bare function, but something with setup, configuration, or state involved —
+write your own class with an ``evaluate()`` method instead of reaching for
+``ObjectiveFn``. This is the more natural fit for anything beyond a single
+pure function call, and it requires no base class or registration:
+
+.. code-block:: python
+
+   class MySimulation:
+       """Wraps an existing simulation as an actgpr Objective."""
+
+       def __init__(self, config):
+           self.config = config  # e.g. simulation setup, fixed parameters
+
+       def evaluate(self, *x: float) -> tuple[float, ...]:
+           return tuple(self._run_simulation(v) for v in x)
+
+       def _run_simulation(self, x: float) -> float:
+           ...  # launch your simulation/experiment at input x, return its output
+
+   objective = MySimulation(config=...)
+
+``OptimisationRun`` only ever calls ``objective.evaluate(...)`` — it never
+checks whether ``objective`` is an ``ObjectiveFn``, so a class like this
+one works exactly the same way.
 
 Step 2 — configure the run
 --------------------------
