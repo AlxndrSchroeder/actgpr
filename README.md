@@ -33,7 +33,7 @@ poetry install
 
 The usage pattern:
 
-1. **Write an Objective wrapper for your blackbox function** — `ObjectiveFn` turns any `Callable[[float], float]` into an Objective with `objective.evaluate(*x) -> tuple[float, ...]`.
+1. **Give it an Objective** — anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation, it's usually more natural to write your own class with an `evaluate()` method instead — `actgpr` never checks the type, only that the method exists.
 2. **Choose the search interval** — `search_bounds` is the closed interval `[lo, hi]` in which the algorithm searches for the minimum.
 3. **Hand both to an `OptimisationRun`** and call `run()`.
 
@@ -47,15 +47,9 @@ def my_blackbox(x: float) -> float:
     return (x - 1) ** 2
 
 
-# 2. Wrap it in an Objective. Conceptually, the wrapper is as small as:
-#
-#        class ObjectiveFn:
-#            def __init__(self, func):
-#                self.func = func
-#
-#            def evaluate(self, *x: float) -> tuple[float, ...]:
-#                return tuple(float(self.func(v)) for v in x)
-#
+# 2. Wrap it in an Objective — ObjectiveFn(func) is a convenience for plain
+#    functions like this one; a real simulation would instead be its own
+#    class with an evaluate() method.
 objective = ObjectiveFn(my_blackbox)
 
 # 3. Configure and execute the optimisation run
