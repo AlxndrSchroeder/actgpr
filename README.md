@@ -19,14 +19,6 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 3. Stop when the maximum EI score falls below `ei_threshold` (nothing left to gain) **or** the number of optimisation iterations reaches `max_iterations` (budget cap) — whichever fires first.
 4. Optionally, every run writes a complete reproducibility record (MRR — see below).
 
-### Example output
-
-`run.plot_iterations()` browsing a completed run, iteration by iteration: the
-GP fit (top, with training data and 95% CI) and the EI landscape (bottom)
-that picked each next point, converging on the minimum as EI shrinks.
-
-![Per-iteration GP fit and EI landscape, converging on the minimum](assets/plot_iterations_demo.gif)
-
 ## Installation
 
 Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/) ≥ 2.0 (the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). All dependency versions are pinned in `poetry.lock`, so `poetry install` reproduces the exact environment.
@@ -83,6 +75,13 @@ print(result["best_x"], result["best_y"])
 ```
 
 Expected output: `best_x` close to `1.0` and `best_y` close to `0.0` (the minimum of `(x − 1)²`). The result dict also contains `train_x`, `train_y`, `n_iterations`, and `stop_reason`.
+
+With `store_snapshots=True`, `run.plot_iterations()` browses the run
+iteration by iteration: the GP fit (top, with training data and 95% CI) and
+the EI landscape (bottom) that picked each next point, converging on the
+minimum as EI shrinks.
+
+![Per-iteration GP fit and EI landscape, converging on the minimum](assets/plot_iterations_demo.gif)
 
 **Fit modes** — the two constructors select how GP hyperparameters are handled:
 
