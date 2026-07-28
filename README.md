@@ -19,14 +19,6 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 3. Stop when the maximum EI score falls below `ei_threshold` (nothing left to gain) **or** the number of optimisation iterations reaches `max_iterations` (budget cap) — whichever fires first.
 4. Optionally, every run writes a complete reproducibility record (MRR — see below).
 
-### Example output
-
-`run.plot_iterations()` browsing a completed run, iteration by iteration: the
-GP fit (top, with training data and 95% CI) and the EI landscape (bottom)
-that picked each next point, converging on the minimum as EI shrinks.
-
-![Per-iteration GP fit and EI landscape, converging on the minimum](assets/plot_iterations_demo.gif)
-
 ## Installation
 
 Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/) ≥ 2.0 (the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). All dependency versions are pinned in `poetry.lock`, so `poetry install` reproduces the exact environment.
@@ -41,7 +33,7 @@ poetry install
 
 The usage pattern:
 
-1. **Write an Objective wrapper for your blackbox function** — `ObjectiveFn` turns any `Callable[[float], float]` into an Objective with `objective.evaluate(*x) -> tuple[float, ...]`.
+1. **Give it an Objective** — anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation, it's usually more natural to write your own class with an `evaluate()` method instead — `actgpr` never checks the type, only that the method exists.
 2. **Choose the search interval** — `search_bounds` is the closed interval `[lo, hi]` in which the algorithm searches for the minimum.
 3. **Hand both to an `OptimisationRun`** and call `run()`.
 
@@ -55,15 +47,9 @@ def my_blackbox(x: float) -> float:
     return (x - 1) ** 2
 
 
-# 2. Wrap it in an Objective. Conceptually, the wrapper is as small as:
-#
-#        class ObjectiveFn:
-#            def __init__(self, func):
-#                self.func = func
-#
-#            def evaluate(self, *x: float) -> tuple[float, ...]:
-#                return tuple(float(self.func(v)) for v in x)
-#
+# 2. Wrap it in an Objective — ObjectiveFn(func) is a convenience for plain
+#    functions like this one; a real simulation would instead be its own
+#    class with an evaluate() method.
 objective = ObjectiveFn(my_blackbox)
 
 # 3. Configure and execute the optimisation run
@@ -83,6 +69,13 @@ print(result["best_x"], result["best_y"])
 ```
 
 Expected output: `best_x` close to `1.0` and `best_y` close to `0.0` (the minimum of `(x − 1)²`). The result dict also contains `train_x`, `train_y`, `n_iterations`, and `stop_reason`.
+
+With `store_snapshots=True`, `run.plot_iterations()` browses the run
+iteration by iteration: the GP fit (top, with training data and 95% CI) and
+the EI landscape (bottom) that picked each next point, converging on the
+minimum as EI shrinks.
+
+<img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape, converging on the minimum">
 
 **Fit modes** — the two constructors select how GP hyperparameters are handled:
 
@@ -152,7 +145,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 
 | Term | Meaning |
 |---|---|
-| **Objective** | The real-valued scalar function being minimised — your blackbox function, wrapped by `ObjectiveFn`. Defaults to `f(x) = x²` (handy for tutorials and tests). |
+| **Objective** | The real-valued scalar function being minimised — your blackbox, wrapped as anything exposing `.evaluate(*x) -> tuple[float, ...]` (e.g. `ObjectiveFn`, or your own class). Defaults to `f(x) = x²` (handy for tutorials and tests). |
 | **Analytic objective** | An Objective computed by a mathematical formula (e.g. `x²`) — used for development and testing. |
 | **Experiment objective** | An Objective whose output comes from a real-world measurement or instrument (planned). |
 | **`train_x`** (or `x`) | The input points passed to the Objective. |
