@@ -328,6 +328,13 @@ class OptimisationRun:
 
     def _config_dict(self) -> dict[str, object]:
         """Return all configuration parameters for MRR recording."""
+        # TODO: for with_training runs, lengthscale/outputscale/noise are
+        #       tuned by Adam every iteration and never recorded — config.json
+        #       only stores them for without_training (where they're fixed
+        #       inputs). Record the tuned values (surrogate.model.covar_module
+        #       .base_kernel.lengthscale / .outputscale, surrogate.likelihood
+        #       .noise) so a with_training run's actual final GP hyperparameters
+        #       are part of its MRR record, not just its inputs.
         return {
             "fit_mode": "training" if self._train_hyperparameters else "notraining",
             "search_bounds": list(self.search_bounds),
