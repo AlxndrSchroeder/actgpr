@@ -81,7 +81,7 @@ iteration by iteration: the GP fit (top, with training data and 95% CI) and
 the EI landscape (bottom) that picked each next point, converging on the
 minimum as EI shrinks.
 
-![Per-iteration GP fit and EI landscape, converging on the minimum](assets/plot_iterations_demo.gif)
+<img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape, converging on the minimum">
 
 **Fit modes** — the two constructors select how GP hyperparameters are handled:
 
