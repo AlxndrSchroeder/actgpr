@@ -328,6 +328,7 @@ class OptimisationRun:
 
     def _config_dict(self) -> dict[str, object]:
         """Return all configuration parameters for MRR recording."""
+
         # TODO: for with_training runs, lengthscale/outputscale/noise are
         #       tuned by Adam every iteration and never recorded — config.json
         #       only stores them for without_training (where they're fixed
@@ -335,6 +336,14 @@ class OptimisationRun:
         #       .base_kernel.lengthscale / .outputscale, surrogate.likelihood
         #       .noise) so a with_training run's actual final GP hyperparameters
         #       are part of its MRR record, not just its inputs.
+
+        # TODO: record what blackbox function the objective actually wraps
+        #       (e.g. an optional name passed to ObjectiveFn) so config.json
+        #       identifies which blackbox a run optimised, not just the
+        #       search parameters around it — right now two runs on
+        #       different objectives are indistinguishable from their MRR
+        #       record alone.
+
         return {
             "fit_mode": "training" if self._train_hyperparameters else "notraining",
             "search_bounds": list(self.search_bounds),
