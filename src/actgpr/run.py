@@ -327,7 +327,15 @@ class OptimisationRun:
             )
 
     def _config_dict(self) -> dict[str, object]:
-        """Return all configuration parameters for MRR recording."""
+        """Return all configuration parameters for MRR recording.
+
+        ``"objective"`` is ``repr(self.objective)`` rather than a specific
+        field, since the Objective is duck-typed — OptimisationRun has no
+        generic way to know what a particular Objective considers worth
+        recording (e.g. ObjectiveFn's ``jitter``). repr() is the one thing
+        every object provides, and any Objective can put whatever it wants
+        in its own __repr__ to show up here.
+        """
 
         # TODO: for with_training runs, lengthscale/outputscale/noise are
         #       tuned by Adam every iteration and never recorded — config.json
@@ -337,14 +345,8 @@ class OptimisationRun:
         #       .noise) so a with_training run's actual final GP hyperparameters
         #       are part of its MRR record, not just its inputs.
 
-        # TODO: record what blackbox function the objective actually wraps
-        #       (e.g. an optional name passed to ObjectiveFn) so config.json
-        #       identifies which blackbox a run optimised, not just the
-        #       search parameters around it — right now two runs on
-        #       different objectives are indistinguishable from their MRR
-        #       record alone.
-
         return {
+            "objective": repr(self.objective),
             "fit_mode": "training" if self._train_hyperparameters else "notraining",
             "search_bounds": list(self.search_bounds),
             "initial_train_x": self.train_x.tolist(),

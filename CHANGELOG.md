@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hyperparameter, which models exactly this observation noise in the GP
   likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
   reproduces it like the rest of the package
+- `config.json` now records `repr(objective)` under `"objective"`, so two
+  runs with identical search parameters but different Objectives (or
+  different `ObjectiveFn` jitter) are distinguishable from their MRR record
+  alone. Uses `repr()` rather than a specific field since the Objective is
+  duck-typed — `OptimisationRun` has no generic way to know what a
+  particular Objective considers worth recording; `repr()` is the one thing
+  every object provides
 
 ## [0.2.0] - 2026-07-28
 

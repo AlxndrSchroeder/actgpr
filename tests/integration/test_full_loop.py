@@ -124,6 +124,7 @@ class TestMrrArtifacts:
         assert config["search_bounds"] == [-4.0, 4.0]
         assert config["max_iterations"] == 8
         assert config["lengthscale"] == 1.0
+        assert config["objective"] == "ObjectiveFn(function=x^2)"
 
     def test_meta_summary_matches_result(self, run_dir: tuple[Path, dict]) -> None:
         """Test that meta.json's output summary matches the returned result."""

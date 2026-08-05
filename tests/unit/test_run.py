@@ -139,6 +139,36 @@ class TestOptimisationRunInit:
         assert "bounds=(-3.0, 3.0)" in r
         assert "max_iter=10" in r
 
+    def test_config_dict_records_objective_repr(
+        self, simple_run: OptimisationRun
+    ) -> None:
+        """Test that _config_dict() identifies the objective via repr().
+
+        repr() is used (rather than a specific field) because the Objective
+        is duck-typed: OptimisationRun has no generic way to know what a
+        particular Objective considers worth recording.
+        """
+        assert simple_run._config_dict()["objective"] == repr(simple_run.objective)
+
+    def test_config_dict_objective_repr_surfaces_jitter(self) -> None:
+        """Test that a jittered ObjectiveFn's config.json entry shows it.
+
+        This is the concrete case the duck-typed repr() approach exists
+        for: jitter is an ObjectiveFn-specific detail OptimisationRun has
+        no other way to record generically.
+        """
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(jitter=0.1),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=5,
+            ei_threshold=0.01,
+        )
+        assert (
+            run._config_dict()["objective"] == "ObjectiveFn(function=x^2, jitter=0.1)"
+        )
+
 
 class TestOptimisationRunRun:
     """Tests for OptimisationRun.run()."""
