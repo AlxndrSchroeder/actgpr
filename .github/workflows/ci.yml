@@ -44,6 +44,50 @@ jobs:
       - name: Run tests (unit, integration, regression)
         run: poetry run pytest tests/
 
+  # Verifies the alternative conda install path, so it cannot rot unnoticed:
+  # conda-lock.yml must stay in sync with environment.yml, and the resulting
+  # environment must pass the same test suite as the Poetry one. Runs in
+  # parallel with `test` — it gates the pull request, not the docs build.
+  conda:
+    needs: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+      - name: Install conda-lock
+        run: pip install conda-lock
+      - name: Check conda-lock.yml is in sync with environment.yml
+        # --check-input-hash compares environment.yml's hash against the one
+        # recorded in conda-lock.yml. Its exit codes are inverted from the
+        # usual convention: 4 means "nothing needed regenerating" (in sync,
+        # the case we want), 0 means it *did* regenerate (the lock was stale).
+        run: |
+          set +e
+          conda-lock lock --check-input-hash -f environment.yml \
+            -p linux-64 -p osx-64 -p osx-arm64 -p win-64
+          status=$?
+          set -e
+          if [ "$status" -eq 4 ]; then
+            echo "conda-lock.yml is in sync with environment.yml"
+          elif [ "$status" -eq 0 ]; then
+            echo "::error::conda-lock.yml is stale. Re-run 'conda-lock lock -f environment.yml -p linux-64 -p osx-64 -p osx-arm64 -p win-64' and commit the result."
+            exit 1
+          else
+            echo "::error::conda-lock failed with exit code $status"
+            exit "$status"
+          fi
+      - name: Create environment from the lock file
+        run: conda-lock install --name actgpr conda-lock.yml
+      - name: Install actgpr itself
+        run: conda run -n actgpr pip install -e . --no-deps
+      - name: Run tests (unit, integration, regression)
+        run: conda run -n actgpr pytest tests/
+
   docs:
     needs: test
     runs-on: ubuntu-latest
