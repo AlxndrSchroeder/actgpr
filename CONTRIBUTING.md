@@ -56,8 +56,8 @@ Dependencies are declared twice — once per install path — so both must be
 updated together:
 
 1. `pyproject.toml` (ranges) → `poetry lock` regenerates `poetry.lock`.
-2. `environment.yml` (the same ranges, conda-forge package names) →
-   regenerate `conda-lock.yml`:
+2. `environment.yml` (conda-forge package names) → regenerate
+   `conda-lock.yml`:
 
    ```bash
    conda-lock lock --micromamba -f environment.yml -p linux-64 -p osx-64 -p osx-arm64 -p win-64

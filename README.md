@@ -49,13 +49,14 @@ the respective *resolved* versions. Install from the lock files, not the
 range files, for a reproducible environment.
 
 > Each path is internally reproducible — the same lock file always gives the
-> same environment. Across paths they are close but not identical: conda-forge
-> and PyPI resolve and build independently, so package builds differ and some
-> transitive versions may too (`environment.yml` deliberately pins PyTorch to
-> the minor version `poetry.lock` uses, since the regression baseline depends
-> on it). For bit-for-bit comparison against a published result, use the same
-> install path that produced it — `meta.json` records every library version of
-> a run.
+> same environment. `environment.yml` deliberately narrows Python and PyTorch
+> below what `pyproject.toml` permits, so conda resolves the same versions the
+> Poetry path is tested on rather than the newest allowed ones (the regression
+> baseline is compared at `rtol=1e-6`, so the two must not drift apart). What
+> still differs is the *builds*: conda-forge and PyPI compile their packages
+> independently, so binaries are not guaranteed identical. For bit-for-bit
+> comparison against a published result, use the same install path that
+> produced it — `meta.json` records every library version of a run.
 
 ## Quick start
 
