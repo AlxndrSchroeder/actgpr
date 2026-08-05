@@ -50,6 +50,31 @@ Enforced automatically by CI on every pull request
 Run all four locally before opening a pull request — they're the exact
 commands CI runs.
 
+### Changing dependencies
+
+Dependencies are declared twice — once per install path — so both must be
+updated together:
+
+1. `pyproject.toml` (ranges) → `poetry lock` regenerates `poetry.lock`.
+2. `environment.yml` (the same ranges, conda-forge package names) →
+   regenerate `conda-lock.yml`:
+
+   ```bash
+   conda-lock lock --micromamba -f environment.yml -p linux-64 -p osx-64 -p osx-arm64 -p win-64
+   ```
+
+   `--micromamba` matters: without it conda-lock downloads conda-forge's
+   uncompressed repodata (~180 MB per platform) and can stall for a long
+   time on a slow connection. micromamba fetches the zstd-compressed
+   repodata instead.
+
+Commit both lock files. CI's `conda` job fails the pull request if
+`conda-lock.yml` is out of sync with `environment.yml`, so the two cannot
+silently drift — but keeping the *ranges* themselves consistent between
+`pyproject.toml` and `environment.yml` is a manual step. Note that two
+package names differ from PyPI on conda-forge: `torch` is `pytorch`, and
+`sphinx-rtd-theme` is `sphinx_rtd_theme`.
+
 ## Maintenance status
 
 `actgpr` is actively maintained; see the
