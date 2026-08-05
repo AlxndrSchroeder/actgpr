@@ -2,6 +2,8 @@
 
 from typing import Callable
 
+import torch
+
 
 def _default_func(x: float) -> float:
     """Evaluate the default Objective: x²."""
@@ -17,9 +19,15 @@ class ObjectiveFn:
     This class represents the real-valued scalar function being optimised.
     It can be configured with an arbitrary single-input function.
     By default, it evaluates the quadratic function: f(x) = x^2.
+    Optionally adds Gaussian jitter to each evaluation, to simulate the
+    sensor/measurement noise of a real experiment.
     """
 
-    def __init__(self, func: Callable[[float], float] | None = None) -> None:
+    def __init__(
+        self,
+        func: Callable[[float], float] | None = None,
+        jitter: float = 0.0,
+    ) -> None:
         """Initialize the ObjectiveFn.
 
         Parameters
@@ -27,8 +35,24 @@ class ObjectiveFn:
         func : callable, optional
             A single-input callable that takes a float and returns a float.
             Defaults to lambda x: x**2.
+        jitter : float, optional
+            Standard deviation of Gaussian noise added to each evaluation,
+            by default 0.0 (no noise). Simulates the sensor/measurement
+            noise a real experiment would have; pairs with the surrogate's
+            ``noise`` hyperparameter, which models exactly this observation
+            noise. Drawn from ``torch``'s RNG, so it is controlled by
+            ``torch.manual_seed(...)`` like the rest of the package.
+
+        Raises
+        ------
+        ValueError
+            If jitter is negative.
         """
+        if jitter < 0:
+            raise ValueError(f"jitter must be non-negative, got {jitter}")
+
         self.func = func if func is not None else DEFAULT_FUNC
+        self.jitter = jitter
 
     def evaluate(self, *args: float) -> tuple[float, ...]:
         """Evaluate the objective at multiple input points.
@@ -56,6 +80,10 @@ class ObjectiveFn:
         Exceptions raised *inside* the Objective itself (e.g. a ValueError
         from a domain error) propagate unchanged so callers can handle the
         original error type.
+
+        If ``jitter`` is non-zero, independent Gaussian noise with that
+        standard deviation is added to each result after ``func`` runs —
+        the wrapped function itself always sees the exact, noise-free input.
         """
         if not args:
             raise ValueError("At least one input argument must be provided.")
@@ -84,6 +112,11 @@ class ObjectiveFn:
         assert len(results) == len(
             args
         ), f"Expected {len(args)} outputs, got {len(results)}"
+
+        if self.jitter > 0:
+            noise = torch.randn(len(results)) * self.jitter
+            results = [r + n.item() for r, n in zip(results, noise)]
+
         return tuple(results)
 
     def __repr__(self) -> str:
@@ -95,4 +128,6 @@ class ObjectiveFn:
         else:
             func_desc = "custom_function"
 
+        if self.jitter > 0:
+            return f"ObjectiveFn(function={func_desc}, jitter={self.jitter})"
         return f"ObjectiveFn(function={func_desc})"

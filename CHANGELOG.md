@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ObjectiveFn(func, jitter=...)` optionally adds independent Gaussian
+  noise to each evaluation, simulating the sensor/measurement noise of a
+  real experiment on an otherwise-analytic objective. Defaults to `0.0`
+  (off, no behaviour change). Pairs with the surrogate's existing `noise`
+  hyperparameter, which models exactly this observation noise in the GP
+  likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
+  reproduces it like the rest of the package
+
 ## [0.2.0] - 2026-07-28
 
 ### Added

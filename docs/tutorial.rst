@@ -50,6 +50,41 @@ of outputs:
 Errors raised inside your function propagate unchanged, so you can handle
 them by their original type.
 
+Simulating experimental noise
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A real experiment's readings are noisy — an analytic stand-in like
+``my_blackbox`` above is not. Pass ``jitter`` to add independent Gaussian
+noise to each evaluation, simulating that sensor/measurement noise:
+
+.. code-block:: python
+
+   noisy_objective = ObjectiveFn(my_blackbox, jitter=0.1)
+
+If you use jitter, set the surrogate's ``noise`` (Step 2) to match —
+``jitter`` is a standard deviation, ``noise`` is a variance, so pass
+``noise=jitter**2``:
+
+.. code-block:: python
+
+   run = OptimisationRun.with_training(
+       objective=noisy_objective,
+       surrogate=GPyTorchSurrogate(),
+       search_bounds=(-3.0, 5.0),
+       initial_train_x=[-3.0, 5.0],
+       max_iterations=20,
+       ei_threshold=0.001,
+       noise=0.1**2,   # matches noisy_objective's jitter=0.1
+   )
+
+Without this, the GP starts out assuming ``noise``'s default of near-zero
+observation noise (``1e-4``) and will overfit to what is actually random
+jitter, mistaking noise for real structure in the objective.
+``with_training`` still tunes ``noise`` further from there — passing a
+realistic starting value just gets it started in the right place. Jitter
+itself is drawn from ``torch``'s RNG, so ``torch.manual_seed(...)``
+reproduces it like everything else in ``actgpr``.
+
 Wrapping your own simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
