@@ -176,7 +176,8 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 |---|---|
 | **Objective** | The real-valued scalar function being minimised — your blackbox, wrapped as anything exposing `.evaluate(*x) -> tuple[float, ...]` (e.g. `ObjectiveFn`, or your own class). Defaults to `f(x) = x²` (handy for tutorials and tests). |
 | **Analytic objective** | An Objective computed by a mathematical formula (e.g. `x²`) — used for development and testing. |
-| **Experiment objective** | An Objective whose output comes from a real-world measurement or instrument (planned). |
+| **Experiment objective** | An Objective whose output comes from a real-world measurement or instrument. `ObjectiveFn(func, jitter=...)` simulates this on an analytic function by adding Gaussian sensor/measurement noise to each evaluation. |
+| **`jitter`** | Standard deviation of the Gaussian noise `ObjectiveFn` optionally adds per evaluation, by default `0.0` (off). Not to be confused with **Cholesky jitter** below — same word, unrelated purpose: this simulates experimental noise in the Objective; Cholesky jitter stabilises the GP's covariance matrix. If used, set the surrogate's `noise` to `jitter**2` (noise is a variance) — otherwise the GP starts out assuming the data is far cleaner than it is. |
 | **`train_x`** (or `x`) | The input points passed to the Objective. |
 | **`train_y`** (or `y`) | The Objective outputs at those input points. |
 | **`test_x`** | Input points where the surrogate predicts without evaluating the Objective. |
@@ -196,7 +197,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 | **Kernel (RBF)** | The covariance function: a radial-basis-function kernel wrapped in a scale kernel. |
 | **`lengthscale`** | RBF kernel hyperparameter — how far correlations reach (smoothness). |
 | **`outputscale`** | Kernel signal variance. |
-| **`noise`** | Observation noise variance of the likelihood. |
+| **`noise`** | Observation noise variance of the likelihood. Should match `jitter**2` if the Objective adds jitter (see above) — a variance, not a standard deviation. |
 | **MLL** | Marginal log likelihood — the training objective maximised when fitting hyperparameters. |
 | **Cholesky jitter** | Small value (`1e-4`) added to the covariance diagonal to keep it numerically positive definite; all computations use float64. |
 | **`f_mean`** | Predicted posterior mean at given input points. |

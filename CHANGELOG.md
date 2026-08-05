@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `environment.yml` — so the alternative path cannot rot unnoticed.
   Note that conda-forge and PyPI build their packages independently, so the
   two paths pin the same versions but not necessarily identical binaries
+- `ObjectiveFn(func, jitter=...)` optionally adds independent Gaussian
+  noise to each evaluation, simulating the sensor/measurement noise of a
+  real experiment on an otherwise-analytic objective. Defaults to `0.0`
+  (off, no behaviour change). Pairs with the surrogate's existing `noise`
+  hyperparameter, which models exactly this observation noise in the GP
+  likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
+  reproduces it like the rest of the package
+- `config.json` now records `repr(objective)` under `"objective"`, so two
+  runs with identical search parameters but different Objectives (or
+  different `ObjectiveFn` jitter) are distinguishable from their MRR record
+  alone. Uses `repr()` rather than a specific field since the Objective is
+  duck-typed — `OptimisationRun` has no generic way to know what a
+  particular Objective considers worth recording; `repr()` is the one thing
+  every object provides
 
 ## [0.2.0] - 2026-07-28
 

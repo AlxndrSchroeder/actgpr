@@ -1,8 +1,11 @@
 """Unit tests for the ObjectiveFn class."""
 
 import pytest
+import torch
 
 from actgpr.objective_fn import ObjectiveFn
+
+SEED = 25
 
 
 def test_objective_evaluation(objective: ObjectiveFn) -> None:
@@ -90,3 +93,67 @@ def test_non_numeric_return_raises_type_error() -> None:
     obj = ObjectiveFn(lambda x: "not a number")  # type: ignore[arg-type,return-value]
     with pytest.raises(TypeError, match="non-numeric value"):
         obj.evaluate(1.0)
+
+
+class TestJitter:
+    """Tests for ObjectiveFn's optional Gaussian jitter."""
+
+    def test_default_jitter_is_zero(self, objective: ObjectiveFn) -> None:
+        """Test that jitter defaults to off, matching prior no-jitter behaviour."""
+        assert objective.jitter == 0.0
+
+    def test_negative_jitter_raises(self) -> None:
+        """Test that a negative jitter is rejected at construction."""
+        with pytest.raises(ValueError, match="jitter must be non-negative"):
+            ObjectiveFn(jitter=-0.1)
+
+    def test_zero_jitter_is_exact(self) -> None:
+        """Test that jitter=0.0 never perturbs the result."""
+        torch.manual_seed(SEED)
+        obj = ObjectiveFn(lambda x: x**2, jitter=0.0)
+
+        assert obj.evaluate(2.0, -3.0) == (4.0, 9.0)
+
+    def test_positive_jitter_perturbs_result(self) -> None:
+        """Test that a positive jitter changes the evaluated output."""
+        torch.manual_seed(SEED)
+        obj = ObjectiveFn(lambda x: x**2, jitter=1.0)
+
+        (result,) = obj.evaluate(2.0)
+
+        assert result != 4.0
+
+    def test_jitter_reproducible_with_same_seed(self) -> None:
+        """Test that jitter is drawn from torch's RNG, controlled by manual_seed."""
+        obj_a = ObjectiveFn(lambda x: x**2, jitter=0.5)
+        obj_b = ObjectiveFn(lambda x: x**2, jitter=0.5)
+
+        torch.manual_seed(SEED)
+        result_a = obj_a.evaluate(1.0, 2.0, 3.0)
+        torch.manual_seed(SEED)
+        result_b = obj_b.evaluate(1.0, 2.0, 3.0)
+
+        assert result_a == result_b
+
+    def test_jitter_is_independent_per_call_argument(self) -> None:
+        """Test that jitter is drawn independently for each evaluated point.
+
+        Same underlying value (x=2.0) evaluated twice in one call should not
+        get identical noise, or jitter would be indistinguishable from a
+        single shared offset rather than per-point sensor noise.
+        """
+        torch.manual_seed(SEED)
+        obj = ObjectiveFn(lambda x: x**2, jitter=1.0)
+
+        result_1, result_2 = obj.evaluate(2.0, 2.0)
+
+        assert result_1 != result_2
+
+    def test_repr_includes_jitter_when_nonzero(self) -> None:
+        """Test that repr surfaces a non-default jitter value."""
+        obj = ObjectiveFn(jitter=0.1)
+        assert repr(obj) == "ObjectiveFn(function=x^2, jitter=0.1)"
+
+    def test_repr_omits_jitter_when_zero(self, objective: ObjectiveFn) -> None:
+        """Test that repr matches prior output when jitter is off."""
+        assert "jitter" not in repr(objective)
