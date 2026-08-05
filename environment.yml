@@ -17,7 +17,14 @@ name: actgpr
 channels:
   - conda-forge
 dependencies:
-  - python >=3.13,<3.15
+  # Held to 3.13.x rather than pyproject.toml's wider <3.15 range for the same
+  # reason as pytorch below: this file exists to reproduce the environment the
+  # Poetry path is tested on, not to restate what the package supports. Poetry
+  # never installs Python — it uses the host interpreter, which CI fixes at
+  # 3.13 — whereas conda resolves Python as a package and would otherwise pick
+  # the newest allowed version (3.14), leaving the two paths on different
+  # interpreters.
+  - python >=3.13,<3.14
   # Runtime
   # Held to 2.12.x rather than pyproject.toml's wider <3.0.0 range so conda
   # resolves the same minor version poetry.lock pins. Left wider, conda-forge
