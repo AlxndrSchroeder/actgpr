@@ -298,3 +298,47 @@ class TestPlotRunHistory:
         """Test that a plain string path works, not just a Path object."""
         fig, ax = plot_run_history(str(run_dir), show=False)
         assert ax is not None
+
+    def test_max_ei_drawn_on_a_log_twin_axis_by_default(self, run_dir: Path) -> None:
+        """Test that max_ei gets its own log-scaled axis without being asked.
+
+        Matches plot_iterations()'s log-scaled EI default. max_ei needs a
+        separate axis because it spans orders of magnitude, while
+        prediction_error and improvement are linear and signed.
+        """
+        fig, ax = plot_run_history(run_dir, show=False)
+
+        (ei_ax,) = [other for other in fig.axes if other is not ax]
+        assert ei_ax.get_yscale() == "log"
+
+        ei_labels = [line.get_label() for line in ei_ax.get_lines()]
+        assert "max_ei" in ei_labels
+
+    def test_primary_axis_stays_linear(self, run_dir: Path) -> None:
+        """Test that the signed/zero-valued metrics keep a linear axis.
+
+        prediction_error is signed and improvement is frequently exactly 0,
+        neither of which a log axis can render — so only max_ei goes log.
+        """
+        _, ax = plot_run_history(run_dir, show=False)
+
+        assert ax.get_yscale() == "linear"
+
+    def test_log_scale_false_omits_the_ei_axis(self, run_dir: Path) -> None:
+        """Test that opting out leaves only the original linear plot."""
+        fig, ax = plot_run_history(run_dir, show=False, log_scale=False)
+
+        assert fig.axes == [ax]
+        labels = [line.get_label() for line in ax.get_lines()]
+        assert "max_ei" not in labels
+
+    def test_legend_covers_both_axes(self, run_dir: Path) -> None:
+        """Test that max_ei appears in the legend despite being on a twin axis.
+
+        Twin axes each own their lines, so a plain ax.legend() would silently
+        drop max_ei from the legend.
+        """
+        _, ax = plot_run_history(run_dir, show=False)
+
+        legend_labels = [text.get_text() for text in ax.get_legend().get_texts()]
+        assert set(legend_labels) == {"prediction_error", "improvement", "max_ei"}

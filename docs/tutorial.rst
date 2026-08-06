@@ -155,7 +155,6 @@ You also choose a **fit mode**:
        initial_train_x=[-3.0, 5.0],  # points where we start looking for the minimum
        max_iterations=20,
        ei_threshold=0.001,
-       store_snapshots=True,         # keep per-iteration state for plotting
        run_dir="results",            # write the MRR record
    )
 
@@ -178,8 +177,9 @@ first, then one point per iteration.
 Step 4 — browse the iterations
 ------------------------------
 
-Because the run was created with ``store_snapshots=True``, you can step
-through the surrogate's view of the problem iteration by iteration:
+Per-iteration state is kept by default (``store_snapshots=True``), so you
+can step through the surrogate's view of the problem iteration by
+iteration:
 
 .. code-block:: python
 
@@ -190,13 +190,14 @@ confidence band, training data) on top, the EI landscape below, and a
 slider to scrub through iterations.
 
 EI typically shrinks by orders of magnitude as a run converges — on a
-linear axis, later iterations can look like a flat line at zero with no
-visible structure. Pass ``log_scale=True`` to keep that shrinkage visible,
-with ``ei_threshold`` drawn as a reference line:
+linear axis, later iterations would look like a flat line at zero with no
+visible structure. The EI axis is therefore drawn on a log scale by
+default, with ``ei_threshold`` as a reference line. Pass ``log_scale=False``
+for a linear axis:
 
 .. code-block:: python
 
-   run.plot_iterations(log_scale=True)
+   run.plot_iterations(log_scale=False)
 
 If the run stopped because ``max_ei`` fell below ``ei_threshold``, the
 slider's final frame is the fit that triggered that convergence — titled
@@ -241,9 +242,22 @@ revisited at any later time:
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
    plot_run_history(run_dir)
 
-This plots ``prediction_error`` and ``improvement`` against iteration:
-``prediction_error`` shrinking towards zero shows the surrogate learning
-the blackbox; ``improvement`` flattening shows the optimisation converging.
+This plots ``prediction_error``, ``improvement``, and ``max_ei`` against
+iteration: ``prediction_error`` shrinking towards zero shows the surrogate
+learning the blackbox; ``improvement`` flattening shows the optimisation
+converging.
+
+``max_ei`` is drawn on its own right-hand axis with a log scale — the same
+default as ``plot_iterations()``, and for the same reason: EI falls by
+orders of magnitude, so on the shared linear axis it would sit flat against
+zero and its decay towards ``ei_threshold`` would be invisible.
+``prediction_error`` and ``improvement`` stay linear because the first is
+signed and the second is frequently exactly zero, neither of which a log
+axis can display. Pass ``log_scale=False`` to omit the ``max_ei`` axis:
+
+.. code-block:: python
+
+   plot_run_history(run_dir, log_scale=False)
 
 For a custom analysis, read the same series directly:
 
@@ -297,10 +311,11 @@ Shared parameters
        ``with_training`` it is only a *starting point* — Adam tunes it
        further alongside lengthscale and outputscale. In
        ``without_training`` it stays fixed at this value for the whole run.
-   * - ``store_snapshots`` (default False)
-     - If ``True``, also keeps each iteration's full GP/EI arrays (in
-       memory and under ``results.h5``'s ``iterations/`` group) so
-       ``plot_iterations()`` can browse them afterward. The
+   * - ``store_snapshots`` (default True)
+     - Keeps each iteration's full GP/EI arrays (in memory and under
+       ``results.h5``'s ``iterations/`` group) so ``plot_iterations()`` can
+       browse them afterward. Set ``False`` to omit them — they are the
+       bulk of ``results.h5``'s size. The
        ``prediction_error``/``improvement`` history used by
        ``plot_run_history()`` is recorded either way.
    * - ``run_dir`` (default None)

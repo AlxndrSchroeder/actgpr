@@ -59,7 +59,7 @@ class OptimisationRun:
         ei_threshold: float,
         n_candidates: int = 500,
         noise: float = 1e-4,
-        store_snapshots: bool = False,
+        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
         *,
         _train_hyperparameters: bool = True,
@@ -97,7 +97,8 @@ class OptimisationRun:
         store_snapshots : bool, optional
             If True, each iteration also stores a snapshot of the GP
             predictions and EI scores for later interactive plotting via
-            plot_iterations(), by default False. The prediction_error and
+            plot_iterations(), by default True. Pass False to skip them (they
+            are the bulk of results.h5's size). The prediction_error and
             improvement history used by plotting.plot_run_history() is
             recorded either way, regardless of this flag.
 
@@ -180,7 +181,7 @@ class OptimisationRun:
         n_candidates: int = 500,
         training_iter: int = 50,
         noise: float = 1e-4,
-        store_snapshots: bool = False,
+        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun that optimises GP hyperparameters.
@@ -213,7 +214,8 @@ class OptimisationRun:
             by default 1e-4.
         store_snapshots : bool, optional
             If True, also stores GP snapshots for interactive plotting via
-            plot_iterations(), by default False. The prediction_error and
+            plot_iterations(), by default True. Pass False to skip them (they
+            are the bulk of results.h5's size). The prediction_error and
             improvement history used by plotting.plot_run_history() is
             recorded either way, regardless of this flag.
 
@@ -250,7 +252,7 @@ class OptimisationRun:
         lengthscale: float = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
-        store_snapshots: bool = False,
+        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun with fixed GP hyperparameters.
@@ -283,7 +285,8 @@ class OptimisationRun:
             The observation noise variance, by default 1e-4.
         store_snapshots : bool, optional
             If True, also stores GP snapshots for interactive plotting via
-            plot_iterations(), by default False. The prediction_error and
+            plot_iterations(), by default True. Pass False to skip them (they
+            are the bulk of results.h5's size). The prediction_error and
             improvement history used by plotting.plot_run_history() is
             recorded either way, regardless of this flag.
 
@@ -635,7 +638,7 @@ class OptimisationRun:
 
         return stop_reason, n_iterations
 
-    def plot_iterations(self, log_scale: bool = False) -> None:
+    def plot_iterations(self, log_scale: bool = True) -> None:
         """Open an interactive matplotlib figure to browse iterations.
 
         Creates a figure with two subplots (GP predictions on top,
@@ -656,7 +659,8 @@ class OptimisationRun:
             ei_threshold convergence criterion marked as a reference line.
             EI often shrinks by orders of magnitude as a run converges,
             which a linear axis compresses into an invisible flat line —
-            log scale keeps that shrinkage visible. By default False.
+            log scale keeps that shrinkage visible, so it is the default.
+            Pass False for a linear EI axis.
 
         Notes
         -----

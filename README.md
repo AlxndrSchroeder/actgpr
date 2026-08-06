@@ -95,14 +95,17 @@ run = OptimisationRun.with_training(
 )
 result = run.run()
 print(result["best_x"], result["best_y"])
+
+# 4. Browse the surrogate iteration by iteration (EI axis is log-scaled
+#    by default; pass log_scale=False for a linear one)
+run.plot_iterations()
 ```
 
 Expected output: `best_x` close to `1.0` and `best_y` close to `0.0` (the minimum of `(x − 1)²`). The result dict also contains `train_x`, `train_y`, `n_iterations`, and `stop_reason`.
 
-With `store_snapshots=True`, `run.plot_iterations()` browses the run
-iteration by iteration: the GP fit (top, with training data and 95% CI) and
-the EI landscape (bottom) that picked each next point, converging on the
-minimum as EI shrinks.
+`run.plot_iterations()` opens an interactive slider over the run: the GP fit
+(top, with training data and 95% CI) and the EI landscape (bottom) that
+picked each next point, converging on the minimum as EI shrinks.
 
 <img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape, converging on the minimum">
 
@@ -126,9 +129,9 @@ run = OptimisationRun.without_training(
 result = run.run()
 ```
 
-Set `store_snapshots=True` to browse the GP and EI state of every iteration afterwards with `run.plot_iterations()` (interactive slider). The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded either way, regardless of this flag.
+Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them — they are the bulk of `results.h5`'s size. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded either way, regardless of this flag.
 
-EI often shrinks by orders of magnitude as a run converges — enough to look like a flat line at zero on a linear axis. Pass `log_scale=True` to `plot_iterations()` to keep that shrinkage visible; `ei_threshold` is drawn as a reference line so you can see the EI curve cross into converged territory.
+EI often shrinks by orders of magnitude as a run converges — enough to look like a flat line at zero on a linear axis. `plot_iterations()` therefore draws the EI axis on a log scale by default, with `ei_threshold` as a reference line so you can see the EI curve cross into converged territory. Pass `log_scale=False` for a linear axis.
 
 ## Run outputs (MRR)
 
@@ -160,7 +163,7 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
                  place in history/ or iterations/)
 ```
 
-To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error` and `improvement` vs. iteration straight from a run directory's `results.h5` — no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk:
+To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error`, `improvement`, and `max_ei` vs. iteration straight from a run directory's `results.h5` — no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk. As in `plot_iterations()`, `max_ei` is drawn on a log scale by default (on its own right-hand axis, since it spans orders of magnitude while the other two are linear and signed); pass `log_scale=False` to omit it:
 
 ```python
 from actgpr.plotting import plot_run_history
@@ -232,7 +235,7 @@ plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.
 | **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_iterations"`. |
 | **`new_y`** | The Objective output at the newly evaluated `next_point`. |
 | **`best_x` / `best_y`** | The input point with the lowest Objective output, and that output — the final result. |
-| **`store_snapshots`** | If `True`, each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded regardless of this flag. |
+| **`store_snapshots`** | If `True` (the default), each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. Set `False` to omit them and keep `results.h5` small. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded regardless of this flag. |
 | **Deferred-write accumulator** | Per-iteration results are collected in memory during the run and written to `results.h5` once at the end. |
 
 ### Validation metrics
@@ -251,7 +254,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **MRR** | Minimal Reproducible Run — a pattern requiring every run to record: what was run, with what inputs, in which environment, what happened, and what came out. |
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
-| **`plot_run_history()`** | Builds the `prediction_error`/`improvement` plot from a run directory's `results.h5` alone — no `OptimisationRun` object needed. |
+| **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone — no `OptimisationRun` object needed. |
 
 ## Development
 
