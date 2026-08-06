@@ -60,7 +60,7 @@ class Acquisition:
         self.f_covar: torch.Tensor | None = None
         self.ei_scores: torch.Tensor | None = None
         # The surrogate's posterior mean at the returned next_point itself
-        # (post zoom-refinement) — distinct from f_mean, which covers only
+        # (post zoom-refinement), distinct from f_mean, which covers only
         # the coarse candidate grid and may not include next_point exactly.
         self.next_point_mean: float | None = None
 
@@ -127,7 +127,7 @@ class Acquisition:
         #
         # Term 2: σ(x) * φ(z)  →  exploration
         #   Rewards points where the model is uncertain (large f_std).
-        #   φ(z) is the bell curve height — computed as exp(log_prob(z)) because
+        #   φ(z) is the bell curve height, computed as exp(log_prob(z)) because
         #   PyTorch's Normal distribution has no .pdf() method, only .log_prob().
         #   exp(log(φ(z))) = φ(z) = (1/√(2π)) · e^(−z²/2)
         z = improvement / f_std[mask]
@@ -187,9 +187,9 @@ class Acquisition:
 
         # Zoom-refine: the coarse grid can only locate the EI maximum to
         # within one grid spacing. Re-score a much finer grid confined to a
-        # small window around the coarse best point — cheap, since the
-        # window is a tiny fraction of the full search bounds — to recover
-        # precision the coarse grid alone can't offer.
+        # small window around the coarse best point. This is cheap, since
+        # the window is a tiny fraction of the full search bounds, and it
+        # recovers precision the coarse grid alone cannot offer.
         spacing = (hi - lo) / (self.n_candidates - 1)
         window = 2 * spacing
         fine_lo = max(lo, coarse_best_x - window)

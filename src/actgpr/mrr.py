@@ -103,7 +103,7 @@ def write_meta(
     """Write environment and output summary to meta.json.
 
     Includes the package name, version, and repository URL so a meta.json
-    file remains identifiable on its own — e.g. if shared or archived
+    file remains identifiable on its own, e.g. if shared or archived
     separately from this repository.
     """
     try:
@@ -190,7 +190,7 @@ def save_hdf5(
         aligned by the ``iteration`` index dataset: ``next_point``, ``new_y``,
         ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``.
         This is the single authoritative record of the run's scalar history.
-        Covers only *evaluated* iterations — see ``convergence_snapshot``
+        Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
     ``iterations/iter_NNN/``
         Written only when ``store_snapshots`` is True: the GP snapshot arrays
@@ -200,12 +200,12 @@ def save_hdf5(
         Attributes ``best_x``, ``best_y``, ``stop_reason``, ``n_iterations``
         and the final ``train_x``/``train_y`` datasets. When ``stop_reason``
         is ``"ei_threshold"`` and ``convergence_snapshot`` is given, also
-        holds the GP/EI state of the fit that triggered convergence —
+        holds the GP/EI state of the fit that triggered convergence,
         attributes ``converged_max_ei``/``converged_next_point`` and
         datasets ``converged_candidates``/``converged_f_mean``/
         ``converged_f_var``/``converged_ei_scores``. That fit's candidate
         was never evaluated, so it has no place in ``history/`` or
-        ``iterations/`` — this is the only place it is recorded.
+        ``iterations/``, so this is the only place it is recorded.
 
     Parameters
     ----------
@@ -244,7 +244,7 @@ def save_hdf5(
                 data=np.array([res[field] for res in results], dtype=np.float64),
             )
 
-        # Snapshot arrays, only when captured — one group per iteration.
+        # Snapshot arrays, only when captured, one group per iteration.
         if store_snapshots:
             iter_group = f.create_group("iterations")
             for res in results:

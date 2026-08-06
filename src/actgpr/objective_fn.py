@@ -82,8 +82,8 @@ class ObjectiveFn:
         original error type.
 
         If ``jitter`` is non-zero, independent Gaussian noise with that
-        standard deviation is added to each result after ``func`` runs —
-        the wrapped function itself always sees the exact, noise-free input.
+        standard deviation is added to each result after ``func`` runs. The
+        wrapped function itself always sees the exact, noise-free input.
         """
         if not args:
             raise ValueError("At least one input argument must be provided.")
@@ -97,7 +97,7 @@ class ObjectiveFn:
                     f"Expected float or int for argument at index {i}, got {type(value).__name__}"
                 ) from exc
 
-            # Errors raised by the Objective itself propagate unchanged —
+            # Errors raised by the Objective itself propagate unchanged;
             # relabelling them would mask the original error type.
             result = self.func(float_val)
 
