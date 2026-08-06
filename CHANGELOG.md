@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prediction_error` and `improvement` stay on the linear primary axis:
   the former is signed and the latter is frequently exactly zero, and a log
   axis can render neither. Pass `log_scale=False` to omit the `max_ei` axis
+- Per-iteration plot titles now report `best_x` alongside `best_y`. The
+  title previously showed only `best:` followed by a number, which was the
+  lowest Objective *output* so far but gave no hint of that, and never
+  showed the input point that achieved it
 
 ### Added
 
