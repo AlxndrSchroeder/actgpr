@@ -635,7 +635,7 @@ class OptimisationRun:
 
         return stop_reason, n_iterations
 
-    def plot_iterations(self, log_scale: bool = False) -> None:
+    def plot_iterations(self, log_scale: bool = True) -> None:
         """Open an interactive matplotlib figure to browse iterations.
 
         Creates a figure with two subplots (GP predictions on top,
@@ -656,7 +656,8 @@ class OptimisationRun:
             ei_threshold convergence criterion marked as a reference line.
             EI often shrinks by orders of magnitude as a run converges,
             which a linear axis compresses into an invisible flat line —
-            log scale keeps that shrinkage visible. By default False.
+            log scale keeps that shrinkage visible, so it is the default.
+            Pass False for a linear EI axis.
 
         Notes
         -----
