@@ -381,6 +381,7 @@ def plot_run_history(
     run_dir: Path | str,
     ax: Axes | None = None,
     show: bool = True,
+    log_scale: bool = True,
 ) -> tuple[Figure, Axes]:
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
@@ -397,11 +398,23 @@ def plot_run_history(
         An existing axes to draw on. If None, a new figure and axes are created.
     show : bool, optional
         Whether to call plt.show() immediately, by default True.
+    log_scale : bool, optional
+        If True (the default), ``max_ei`` is drawn on a second y-axis with a
+        log scale, matching ``OptimisationRun.plot_iterations()``. EI shrinks
+        by orders of magnitude as a run converges, so a linear axis hides
+        the shrinkage that signals convergence. Pass False to omit the
+        ``max_ei`` axis entirely.
+
+        ``prediction_error`` and ``improvement`` stay on the linear primary
+        axis either way: ``prediction_error`` is signed and ``improvement``
+        is frequently exactly zero, neither of which a log axis can render.
 
     Returns
     -------
     tuple[Figure, Axes]
-        The figure and axes used for the plot.
+        The figure and the primary axes. When ``log_scale`` is True the
+        ``max_ei`` twin axis is reachable via ``ax.get_shared_x_axes()`` or
+        ``fig.axes[1]``.
 
     Raises
     ------
@@ -420,6 +433,7 @@ def plot_run_history(
         iteration = history["iteration"][:]
         prediction_error = history["prediction_error"][:]
         improvement = history["improvement"][:]
+        max_ei = history["max_ei"][:]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
 
@@ -428,13 +442,23 @@ def plot_run_history(
     else:
         fig = ax.get_figure()
 
-    ax.plot(iteration, prediction_error, "o-", label="prediction_error")
-    ax.plot(iteration, improvement, "o-", label="improvement")
+    lines = ax.plot(iteration, prediction_error, "o-", label="prediction_error")
+    lines += ax.plot(iteration, improvement, "o-", label="improvement")
     ax.axhline(0, color="grey", linestyle=":", linewidth=1)
     ax.set_xlabel("iteration")
     ax.set_ylabel("value")
     ax.set_title(f"Run history | best_y: {best_y:.4f} | stop: {stop_reason}")
-    ax.legend()
+
+    if log_scale:
+        # max_ei spans orders of magnitude while prediction_error and
+        # improvement are linear and signed, so it gets its own log axis
+        # rather than flattening everything onto one scale.
+        ei_ax = ax.twinx()
+        ei_ax.set_yscale("log")
+        lines += ei_ax.plot(iteration, max_ei, "s--", color="green", label="max_ei")
+        ei_ax.set_ylabel("max_ei (log)")
+
+    ax.legend(lines, [line.get_label() for line in lines])
 
     if show:
         plt.show()
