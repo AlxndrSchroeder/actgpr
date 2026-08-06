@@ -44,6 +44,54 @@ jobs:
       - name: Run tests (unit, integration, regression)
         run: poetry run pytest tests/
 
+  # Verifies the alternative conda install path, so it cannot rot unnoticed:
+  # conda-lock.yml must stay in sync with environment.yml, and the resulting
+  # environment must pass the same test suite as the Poetry one. Runs in
+  # parallel with `test` — it gates the pull request, not the docs build.
+  conda:
+    needs: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+      - name: Install conda-lock
+        run: pip install conda-lock
+      - name: Check conda-lock.yml is in sync with environment.yml
+        # --check-input-hash skips the solve when environment.yml's hash still
+        # matches the one recorded in conda-lock.yml, and re-solves (rewriting
+        # the file) when it doesn't. Staleness is therefore detected by whether
+        # the file changed, not by the exit code — conda-lock returns 0 both
+        # when it skips and when it regenerates. Exit codes are only used to
+        # tell a successful run from a genuine tool failure (4 is documented as
+        # "nothing was updated" and is also a success).
+        run: |
+          set +e
+          conda-lock lock --check-input-hash -f environment.yml \
+            -p linux-64 -p osx-64 -p osx-arm64 -p win-64
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ] && [ "$status" -ne 4 ]; then
+            echo "::error::conda-lock failed with exit code $status"
+            exit "$status"
+          fi
+          if git diff --quiet -- conda-lock.yml; then
+            echo "conda-lock.yml is in sync with environment.yml"
+          else
+            echo "::error::conda-lock.yml is stale. Re-run 'conda-lock lock --micromamba -f environment.yml -p linux-64 -p osx-64 -p osx-arm64 -p win-64' and commit the result."
+            exit 1
+          fi
+      - name: Create environment from the lock file
+        run: conda-lock install --name actgpr conda-lock.yml
+      - name: Install actgpr itself
+        run: conda run -n actgpr pip install -e . --no-deps
+      - name: Run tests (unit, integration, regression)
+        run: conda run -n actgpr pytest tests/
+
   docs:
     needs: test
     runs-on: ubuntu-latest

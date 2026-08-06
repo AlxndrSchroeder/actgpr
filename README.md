@@ -21,13 +21,42 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 
 ## Installation
 
-Requires Python ≥ 3.13 and [Poetry](https://python-poetry.org/) ≥ 2.0 (the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). All dependency versions are pinned in `poetry.lock`, so `poetry install` reproduces the exact environment.
+Requires Python ≥ 3.13. Two equally supported paths — pick whichever
+ecosystem you already use. Both are exercised on Linux by CI on every
+change, and both install pinned, fully resolved dependency versions.
+
+**With Poetry** (needs [Poetry](https://python-poetry.org/) ≥ 2.0 — the project uses the PEP 621 `pyproject.toml` format, which Poetry 1.x cannot read). Versions are pinned in `poetry.lock`:
 
 ```bash
 git clone https://github.com/AlxndrSchroeder/actgpr.git
 cd actgpr
 poetry install
 ```
+
+**With conda** (needs [conda-lock](https://github.com/conda/conda-lock)). Versions are pinned in `conda-lock.yml`, solved separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`:
+
+```bash
+git clone https://github.com/AlxndrSchroeder/actgpr.git
+cd actgpr
+conda-lock install --name actgpr conda-lock.yml
+conda activate actgpr
+pip install -e . --no-deps          # the package itself; deps come from the lock file
+```
+
+`environment.yml` holds the conda *ranges* (the input to conda-lock) and
+`pyproject.toml` the Poetry ones; `conda-lock.yml` and `poetry.lock` hold
+the respective *resolved* versions. Install from the lock files, not the
+range files, for a reproducible environment.
+
+> Each path is internally reproducible — the same lock file always gives the
+> same environment. `environment.yml` deliberately narrows Python and PyTorch
+> below what `pyproject.toml` permits, so conda resolves the same versions the
+> Poetry path is tested on rather than the newest allowed ones (the regression
+> baseline is compared at `rtol=1e-6`, so the two must not drift apart). What
+> still differs is the *builds*: conda-forge and PyPI compile their packages
+> independently, so binaries are not guaranteed identical. For bit-for-bit
+> comparison against a published result, use the same install path that
+> produced it — `meta.json` records every library version of a run.
 
 ## Quick start
 
