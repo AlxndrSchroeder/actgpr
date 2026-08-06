@@ -17,6 +17,11 @@ name: actgpr
 channels:
   - conda-forge
 dependencies:
+  # conda environments do not include pip unless it is declared. It is needed
+  # to install actgpr itself into the environment afterwards
+  # (`pip install -e . --no-deps`), since the lock file provides only the
+  # dependencies, not the package.
+  - pip
   # Held to 3.13.x rather than pyproject.toml's wider <3.15 range for the same
   # reason as pytorch below: this file exists to reproduce the environment the
   # Poetry path is tested on, not to restate what the package supports. Poetry
