@@ -10,13 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Conda is now a supported install path alongside Poetry: `environment.yml`
-  declares the conda dependency ranges and `conda-lock.yml` pins them,
-  solved separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`.
-  A new `conda` CI job installs from the lock file and runs the full test
-  suite, and fails the build if `conda-lock.yml` has drifted out of sync
-  with `environment.yml` — so the alternative path cannot rot unnoticed.
-  Note that conda-forge and PyPI build their packages independently, so the
-  two paths pin the same versions but not necessarily identical binaries
+  declares the conda dependency spec and `conda-lock.yml` pins it, solved
+  separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`. A new
+  `conda` CI job installs from the lock file and runs the full test suite,
+  and fails the build if `conda-lock.yml` has drifted out of sync with
+  `environment.yml` — so the alternative path cannot rot unnoticed.
+  `environment.yml` deliberately narrows Python and PyTorch below the ranges
+  `pyproject.toml` permits, so conda resolves the same versions the Poetry
+  path is tested on; conda-forge and PyPI still build independently, so the
+  binaries are not guaranteed identical
 - `ObjectiveFn(func, jitter=...)` optionally adds independent Gaussian
   noise to each evaluation, simulating the sensor/measurement noise of a
   real experiment on an otherwise-analytic objective. Defaults to `0.0`
