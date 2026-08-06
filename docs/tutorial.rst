@@ -242,9 +242,22 @@ revisited at any later time:
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
    plot_run_history(run_dir)
 
-This plots ``prediction_error`` and ``improvement`` against iteration:
-``prediction_error`` shrinking towards zero shows the surrogate learning
-the blackbox; ``improvement`` flattening shows the optimisation converging.
+This plots ``prediction_error``, ``improvement``, and ``max_ei`` against
+iteration: ``prediction_error`` shrinking towards zero shows the surrogate
+learning the blackbox; ``improvement`` flattening shows the optimisation
+converging.
+
+``max_ei`` is drawn on its own right-hand axis with a log scale — the same
+default as ``plot_iterations()``, and for the same reason: EI falls by
+orders of magnitude, so on the shared linear axis it would sit flat against
+zero and its decay towards ``ei_threshold`` would be invisible.
+``prediction_error`` and ``improvement`` stay linear because the first is
+signed and the second is frequently exactly zero, neither of which a log
+axis can display. Pass ``log_scale=False`` to omit the ``max_ei`` axis:
+
+.. code-block:: python
+
+   plot_run_history(run_dir, log_scale=False)
 
 For a custom analysis, read the same series directly:
 

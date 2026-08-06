@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shrinks by orders of magnitude as a run converges, which a linear axis
   compresses into an invisible flat line at zero; pass `log_scale=False`
   for a linear EI axis
+- `plot_run_history()` now also plots `max_ei`, on a log-scaled second
+  y-axis, so both plotting entry points show EI on a log scale by default.
+  `prediction_error` and `improvement` stay on the linear primary axis:
+  the former is signed and the latter is frequently exactly zero, and a log
+  axis can render neither. Pass `log_scale=False` to omit the `max_ei` axis
 
 ### Added
 

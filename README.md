@@ -163,7 +163,7 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
                  place in history/ or iterations/)
 ```
 
-To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error` and `improvement` vs. iteration straight from a run directory's `results.h5` — no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk:
+To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error`, `improvement`, and `max_ei` vs. iteration straight from a run directory's `results.h5` — no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk. As in `plot_iterations()`, `max_ei` is drawn on a log scale by default (on its own right-hand axis, since it spans orders of magnitude while the other two are linear and signed); pass `log_scale=False` to omit it:
 
 ```python
 from actgpr.plotting import plot_run_history
@@ -254,7 +254,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **MRR** | Minimal Reproducible Run — a pattern requiring every run to record: what was run, with what inputs, in which environment, what happened, and what came out. |
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
-| **`plot_run_history()`** | Builds the `prediction_error`/`improvement` plot from a run directory's `results.h5` alone — no `OptimisationRun` object needed. |
+| **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone — no `OptimisationRun` object needed. |
 
 ## Development
 
