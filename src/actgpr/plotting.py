@@ -443,6 +443,7 @@ def plot_run_history(
         prediction_error = history["prediction_error"][:]
         improvement = history["improvement"][:]
         max_ei = history["max_ei"][:]
+        best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
 
@@ -456,7 +457,13 @@ def plot_run_history(
     ax.axhline(0, color="grey", linestyle=":", linewidth=1)
     ax.set_xlabel("iteration")
     ax.set_ylabel("value")
-    ax.set_title(f"Run history | best_y: {best_y:.4f} | stop: {stop_reason}")
+    # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
+    # plotting entry points report the run's outcome identically whether it
+    # is read from memory or reconstructed from results.h5.
+    ax.set_title(
+        f"Run history | best_x: {best_x:.4f} | "
+        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    )
 
     if log_scale:
         # max_ei spans orders of magnitude while prediction_error and

@@ -287,12 +287,19 @@ class TestPlotRunHistory:
         )
         assert len(pred_error_line.get_xdata()) == 5
 
-    def test_title_reports_best_y_and_stop_reason(self, run_dir: Path) -> None:
-        """Test that the title surfaces the run's final outcome."""
-        _, ax = plot_run_history(run_dir, show=False)
+    def test_title_reports_best_x_best_y_and_stop_reason(self, run_dir: Path) -> None:
+        """Test that the title surfaces the run's final outcome.
 
-        assert "0.2" in ax.get_title()
-        assert "max_iterations" in ax.get_title()
+        Labels match plot_iteration_snapshot's, so a run reconstructed from
+        results.h5 reports its outcome the same way as one plotted straight
+        from memory. `best:` alone is ambiguous about which of x or y it is.
+        """
+        _, ax = plot_run_history(run_dir, show=False)
+        title = ax.get_title()
+
+        assert "best_x: 1.0000" in title
+        assert "best_y: 0.2000" in title
+        assert "max_iterations" in title
 
     def test_accepts_string_path(self, run_dir: Path) -> None:
         """Test that a plain string path works, not just a Path object."""
