@@ -360,7 +360,7 @@ def plot_iteration_snapshot(
         # scored but never evaluated, so there is no prediction_error or
         # improvement to report for it.
         gp_ax.set_title(
-            f"Iteration {snapshot['iteration']} (converged — not evaluated) | "
+            f"Iteration {snapshot['iteration']} (converged, not evaluated) | "
             f"best: {snapshot['current_best']:.4f}"
         )
 
