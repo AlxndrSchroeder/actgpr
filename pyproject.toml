@@ -1,7 +1,7 @@
 [project]
 name = "actgpr"
 version = "0.2.0"
-description = "Active GPR Optimisation — finds the minimum of an expensive scalar objective via a Gaussian Process surrogate and Expected Improvement"
+description = "Active GPR Optimisation: finds the minimum of an expensive scalar objective via a Gaussian Process surrogate and Expected Improvement"
 authors = [{name = "Alexander Schröder"}]
 license = "MIT"
 license-files = ["LICENSE"]

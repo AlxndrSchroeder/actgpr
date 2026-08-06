@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `store_snapshots` now defaults to `True`. Browsing a run with
   `plot_iterations()` previously required setting the flag before the run
   started, so anyone who had not anticipated it got a `RuntimeError` and had
-  to re-run. Pass `store_snapshots=False` to opt out — the snapshot arrays
+  to re-run. Pass `store_snapshots=False` to opt out, since the snapshot arrays
   are the bulk of `results.h5`'s size
 - `OptimisationRun.plot_iterations()` now defaults to `log_scale=True`. EI
   shrinks by orders of magnitude as a run converges, which a linear axis
@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`. A new
   `conda` CI job installs from the lock file and runs the full test suite,
   and fails the build if `conda-lock.yml` has drifted out of sync with
-  `environment.yml` — so the alternative path cannot rot unnoticed.
+  `environment.yml`, so the alternative path cannot rot unnoticed.
   `environment.yml` deliberately narrows Python and PyTorch below the ranges
   `pyproject.toml` permits, so conda resolves the same versions the Poetry
   path is tested on; conda-forge and PyPI still build independently, so the
@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs with identical search parameters but different Objectives (or
   different `ObjectiveFn` jitter) are distinguishable from their MRR record
   alone. Uses `repr()` rather than a specific field since the Objective is
-  duck-typed — `OptimisationRun` has no generic way to know what a
+  duck-typed and `OptimisationRun` has no generic way to know what a
   particular Objective considers worth recording; `repr()` is the one thing
   every object provides
 
@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plot_acquisition()`, `plot_iteration_snapshot()`, and
   `OptimisationRun.plot_iterations(log_scale=True)` can now render the EI
   y-axis on a log scale, with `ei_threshold` drawn as a reference line one
-  order of magnitude above the axis floor — makes the EI shrinkage across
+  order of magnitude above the axis floor. This makes the EI shrinkage across
   a converging run visible instead of compressed into an invisible flat
   line on a linear axis
 - Sphinx API docs and tutorial are now published to GitHub Pages
@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   software that produced it even if shared on its own
 - `plotting.plot_run_history(run_dir)` builds the `prediction_error` /
   `improvement` vs. iteration plot directly from a saved run's `results.h5`
-  — no `OptimisationRun` object needed
+  with no `OptimisationRun` object needed
 - `run.log` now ends with a summary line giving `best_x`/`best_y`/
   `stop_reason`, so the identified minimum can be read straight off the log
   without opening `results.h5` or holding onto `run.run()`'s return value
@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `results.h5`/`meta.json` checkpoint (`stop_reason="crashed"`) covering
   every iteration completed before the failure, then re-raises
 - `prediction_error` compared the objective's actual output against the
-  surrogate's predicted mean at the coarse candidate grid's EI-argmax —
+  surrogate's predicted mean at the coarse candidate grid's EI-argmax,
   not at `next_point` itself, which the EI zoom-refinement fix above can
   now shift away from that exact grid point. `Acquisition` now tracks
   `next_point_mean`, the predicted mean at the refined `next_point`, and
@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   short, showing the second-to-last state (still above `ei_threshold`) as
   if the run had stopped prematurely. The converging fit's state is now
   captured in `OptimisationRun._convergence_snapshot`, shown as the
-  slider's final frame (titled "converged — not evaluated", since its
+  slider's final frame (titled "converged, not evaluated", since its
   candidate was scored but never evaluated), and written to `results.h5`
   under `final/converged_*` when `store_snapshots=True`
 

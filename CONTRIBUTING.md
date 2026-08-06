@@ -20,7 +20,7 @@ reports and feature/enhancement requests. Please include:
   field of any run you have on disk)
 - a minimal reproduction, where possible
 
-Found a **security vulnerability**? Do not open a public issue — see
+Found a **security vulnerability**? Do not open a public issue. See
 [SECURITY.md](SECURITY.md) instead.
 
 Issues, comments, and documentation are in English.
@@ -38,21 +38,21 @@ This project follows [GitHub Flow](https://docs.github.com/en/get-started/using-
 Enforced automatically by CI on every pull request
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)):
 
-- **Formatting** — [black](https://black.readthedocs.io/): `poetry run black --check src/ tests/`
-- **Linting** — [ruff](https://docs.astral.sh/ruff/): `poetry run ruff check src/ tests/`
-- **Tests** — [pytest](https://docs.pytest.org/): `poetry run pytest tests/`
+- **Formatting** with [black](https://black.readthedocs.io/): `poetry run black --check src/ tests/`
+- **Linting** with [ruff](https://docs.astral.sh/ruff/): `poetry run ruff check src/ tests/`
+- **Tests** with [pytest](https://docs.pytest.org/): `poetry run pytest tests/`
   (unit, integration, and regression tiers all must pass; add tests for new
   behaviour)
-- **Documentation** — [Sphinx](https://www.sphinx-doc.org/) builds without
+- **Documentation** with [Sphinx](https://www.sphinx-doc.org/) builds without
   warnings: `poetry run sphinx-build -W docs docs/build/html` (public
   functions/classes need NumPy-style docstrings)
 
-Run all four locally before opening a pull request — they're the exact
+Run all four locally before opening a pull request. They are the exact
 commands CI runs.
 
 ### Changing dependencies
 
-Dependencies are declared twice — once per install path — so both must be
+Dependencies are declared twice, once per install path, so both must be
 updated together:
 
 1. `pyproject.toml` (ranges) → `poetry lock` regenerates `poetry.lock`.
@@ -70,7 +70,7 @@ updated together:
 
 Commit both lock files. CI's `conda` job fails the pull request if
 `conda-lock.yml` is out of sync with `environment.yml`, so the two cannot
-silently drift — but keeping the *ranges* themselves consistent between
+silently drift. Keeping the *ranges* themselves consistent between
 `pyproject.toml` and `environment.yml` is a manual step. Note that two
 package names differ from PyPI on conda-forge: `torch` is `pytorch`, and
 `sphinx-rtd-theme` is `sphinx_rtd_theme`.
