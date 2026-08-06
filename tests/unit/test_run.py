@@ -323,6 +323,7 @@ class TestOptimisationRunRun:
             ei_threshold=1.0,
             n_candidates=50,
             training_iter=10,
+            store_snapshots=False,
         )
         result = run.run()
 
@@ -500,6 +501,35 @@ class TestOptimisationRunSnapshots:
             store_snapshots=True,
         )
 
+    @pytest.fixture()
+    def no_snapshot_run(self) -> OptimisationRun:
+        """Return an OptimisationRun with store_snapshots explicitly disabled."""
+        torch.manual_seed(SEED)
+        return OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
+            max_iterations=8,
+            ei_threshold=0.01,
+            n_candidates=50,
+            training_iter=10,
+            store_snapshots=False,
+        )
+
+    def test_snapshots_enabled_by_default(self, simple_run: OptimisationRun) -> None:
+        """Test that snapshots are kept without asking, so plot_iterations() works.
+
+        Opting out (store_snapshots=False) keeps results.h5 small; opting in
+        used to be required, which made the plotting entry point fail for
+        anyone who had not set the flag up front.
+        """
+        assert simple_run.store_snapshots is True
+
+        simple_run.run()
+
+        assert all("candidates" in entry for entry in simple_run._results)
+
     def test_snapshots_stored_when_enabled(self, snapshot_run: OptimisationRun) -> None:
         """Test that snapshots are present in _results when store_snapshots=True."""
         snapshot_run.run()
@@ -514,10 +544,12 @@ class TestOptimisationRunSnapshots:
         for entry in snapshot_run._results:
             assert snapshot_keys.issubset(entry.keys())
 
-    def test_snapshots_absent_when_disabled(self, simple_run: OptimisationRun) -> None:
+    def test_snapshots_absent_when_disabled(
+        self, no_snapshot_run: OptimisationRun
+    ) -> None:
         """Test that no snapshot tensors are stored when store_snapshots=False."""
-        simple_run.run()
-        for entry in simple_run._results:
+        no_snapshot_run.run()
+        for entry in no_snapshot_run._results:
             assert "candidates" not in entry
 
     def test_snapshot_tensors_have_correct_shapes(
@@ -540,12 +572,12 @@ class TestOptimisationRunSnapshots:
             assert results[1]["train_x"].numel() > results[0]["train_x"].numel()
 
     def test_plot_iterations_raises_without_snapshots(
-        self, simple_run: OptimisationRun
+        self, no_snapshot_run: OptimisationRun
     ) -> None:
         """Test that plot_iterations raises RuntimeError without snapshots."""
-        simple_run.run()
+        no_snapshot_run.run()
         with pytest.raises(RuntimeError, match="No snapshots available"):
-            simple_run.plot_iterations()
+            no_snapshot_run.plot_iterations()
 
     def test_plot_iterations_ei_axis_has_fixed_range(
         self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
@@ -554,7 +586,28 @@ class TestOptimisationRunSnapshots:
 
         Without a fixed range, matplotlib would autoscale the EI subplot to
         each iteration's own scores, hiding the shrinking EI maximum that
-        signals convergence.
+        signals convergence. Checked on the linear axis, hence
+        log_scale=False.
+        """
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        snapshot_run.run()
+        snapshot_run.plot_iterations(log_scale=False)
+
+        _, ei_ax = plt.gcf().axes[:2]
+        expected_max = max(r["ei_scores"].max().item() for r in snapshot_run._results)
+        assert ei_ax.get_ylim() == (0.0, pytest.approx(expected_max * 1.05))
+
+    def test_plot_iterations_log_scale_is_the_default(
+        self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the EI axis is log-scaled without asking for it.
+
+        EI shrinks by orders of magnitude as a run converges, which a linear
+        axis flattens into an invisible line at zero — so log is the useful
+        default and linear is the opt-out.
         """
         import matplotlib.pyplot as plt
 
@@ -564,8 +617,7 @@ class TestOptimisationRunSnapshots:
         snapshot_run.plot_iterations()
 
         _, ei_ax = plt.gcf().axes[:2]
-        expected_max = max(r["ei_scores"].max().item() for r in snapshot_run._results)
-        assert ei_ax.get_ylim() == (0.0, pytest.approx(expected_max * 1.05))
+        assert ei_ax.get_yscale() == "log"
 
     def test_plot_iterations_log_scale(
         self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
