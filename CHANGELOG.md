@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `store_snapshots` now defaults to `True`. Browsing a run with
+  `plot_iterations()` previously required setting the flag before the run
+  started, so anyone who had not anticipated it got a `RuntimeError` and had
+  to re-run. Pass `store_snapshots=False` to opt out — the snapshot arrays
+  are the bulk of `results.h5`'s size
+- `OptimisationRun.plot_iterations()` now defaults to `log_scale=True`. EI
+  shrinks by orders of magnitude as a run converges, which a linear axis
+  compresses into an invisible flat line at zero; pass `log_scale=False`
+  for a linear EI axis
+
 ### Added
 
 - Conda is now a supported install path alongside Poetry: `environment.yml`
