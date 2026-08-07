@@ -149,7 +149,10 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
 ```
 /            attrs: run configuration
 ├── history/     per-iteration scalar series (iteration, next_point, new_y,
-│                current_best, max_ei, prediction_error, improvement)
+│                current_best, max_ei, prediction_error, improvement, plus
+│                lengthscale/outputscale/noise when the surrogate reports
+│                them, so a with_training run's retuning is visible per
+│                iteration rather than collapsed to its final value)
 ├── iterations/  iter_NNN/ GP snapshot arrays (omitted if store_snapshots=False)
 └── final/       best_x, best_y, stop_reason, n_iterations + final train_x/train_y
                  + converged_max_ei/converged_next_point/converged_candidates/

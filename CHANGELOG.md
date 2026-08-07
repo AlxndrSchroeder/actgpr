@@ -45,8 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real experiment on an otherwise-analytic objective. Defaults to `0.0`
   (off, no behaviour change). Pairs with the surrogate's existing `noise`
   hyperparameter, which models exactly this observation noise in the GP
-  likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
-  reproduces it like the rest of the package
+  likelihood. The noise comes from a generator the `ObjectiveFn` owns,
+  seeded with 25 by default (override with `seed=`), so a jittered run is
+  reproducible without the caller seeding anything and jitter does not
+  disturb the global `torch` RNG
+- `results.h5`'s `history/` group now records `lengthscale`, `outputscale`,
+  and `noise` per iteration, alongside the existing scalar series. In
+  `with_training` the surrogate is refitted every iteration and the
+  hyperparameters move substantially (lengthscale swung from 1.95 to 0.65
+  within two iterations in testing), so a single final value cannot
+  describe the run. Present only when the surrogate reports them
 - `results.h5`'s `final/` group and `run.log` now record the surrogate's
   final hyperparameters (`fitted_lengthscale`, `fitted_outputscale`,
   `fitted_noise`). For `with_training` runs these are the values Adam

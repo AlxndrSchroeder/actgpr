@@ -81,9 +81,16 @@ Without this, the GP starts out assuming ``noise``'s default of near-zero
 observation noise (``1e-4``) and will overfit to what is actually random
 jitter, mistaking noise for real structure in the objective.
 ``with_training`` still tunes ``noise`` further from there, so passing a
-realistic starting value just gets it started in the right place. Jitter
-itself is drawn from ``torch``'s RNG, so ``torch.manual_seed(...)``
-reproduces it like everything else in ``actgpr``.
+realistic starting value just gets it started in the right place.
+
+The jitter noise comes from a generator the ``ObjectiveFn`` owns, seeded
+with 25 by default, so a jittered run reproduces without you seeding
+anything and the noise does not disturb the global ``torch`` RNG. Pass a
+different ``seed`` for a different noise sequence:
+
+.. code-block:: python
+
+   ObjectiveFn(my_blackbox, jitter=0.1, seed=7)
 
 Wrapping your own simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
