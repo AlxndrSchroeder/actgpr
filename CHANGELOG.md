@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hyperparameter, which models exactly this observation noise in the GP
   likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
   reproduces it like the rest of the package
+- `results.h5`'s `final/` group and `run.log` now record the surrogate's
+  final hyperparameters (`fitted_lengthscale`, `fitted_outputscale`,
+  `fitted_noise`). For `with_training` runs these are the values Adam
+  converged to, and they were previously absent from the MRR record
+  entirely: `config.json` is written before the loop starts, so it holds
+  `None` for lengthscale/outputscale and only the *starting* noise. Read
+  via an optional `hyperparameters()` method on the surrogate, so a
+  backend without one is unaffected
 - `config.json` now records `repr(objective)` under `"objective"`, so two
   runs with identical search parameters but different Objectives (or
   different `ObjectiveFn` jitter) are distinguishable from their MRR record
