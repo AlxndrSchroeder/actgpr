@@ -35,6 +35,10 @@ EI_LOG_FLOOR_MARGIN = 0.1
 # Fallback log-scale floor when no ei_threshold is available.
 EI_LOG_FLOOR_DEFAULT = 1e-8
 
+# Surrogate hyperparameters reported in plot titles, when available. Named
+# once so the snapshot and run-history plots stay in step.
+HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
+
 
 def plot_gp(
     candidates: torch.Tensor,
@@ -356,7 +360,7 @@ def plot_iteration_snapshot(
     best_x = snapshot["train_x"][best_index].item()
 
     if "prediction_error" in snapshot:
-        gp_ax.set_title(
+        title = (
             f"Iteration {snapshot['iteration']} | "
             f"best_x: {best_x:.4f} | "
             f"best_y: {snapshot['current_best']:.4f} | "
@@ -367,11 +371,21 @@ def plot_iteration_snapshot(
         # The fit that triggered ei_threshold convergence: next_point was
         # scored but never evaluated, so there is no prediction_error or
         # improvement to report for it.
-        gp_ax.set_title(
+        title = (
             f"Iteration {snapshot['iteration']} (converged, not evaluated) | "
             f"best_x: {best_x:.4f} | "
             f"best_y: {snapshot['current_best']:.4f}"
         )
+
+    # The hyperparameters of this iteration's fit, on a second line so the
+    # first stays readable. Absent for snapshots from a surrogate that does
+    # not report them, so they are optional here too.
+    if all(key in snapshot for key in HYPERPARAMETER_KEYS):
+        title += "\n" + " | ".join(
+            f"{key}: {snapshot[key]:.4g}" for key in HYPERPARAMETER_KEYS
+        )
+
+    gp_ax.set_title(title)
 
     plot_acquisition(
         candidates=snapshot["candidates"],
@@ -446,6 +460,13 @@ def plot_run_history(
         best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
+        # The hyperparameters the run finished with, written by
+        # mrr.save_hdf5 when the surrogate reports them.
+        fitted = {
+            key: float(f["final"].attrs[f"fitted_{key}"])
+            for key in HYPERPARAMETER_KEYS
+            if f"fitted_{key}" in f["final"].attrs
+        }
 
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
@@ -460,10 +481,17 @@ def plot_run_history(
     # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
     # plotting entry points report the run's outcome identically whether it
     # is read from memory or reconstructed from results.h5.
-    ax.set_title(
+    title = (
         f"Run history | best_x: {best_x:.4f} | "
         f"best_y: {best_y:.4f} | stop: {stop_reason}"
     )
+    # Second line mirrors plot_iteration_snapshot's, except these are the
+    # values the run ended on rather than one iteration's.
+    if fitted:
+        title += "\nfinal " + " | ".join(
+            f"{key}: {value:.4g}" for key, value in fitted.items()
+        )
+    ax.set_title(title)
 
     if log_scale:
         # max_ei spans orders of magnitude while prediction_error and
