@@ -105,6 +105,36 @@ Example animation for a run on the function `sin(x) + x²/40` over
 
 <img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum">
 
+The exact configuration behind it:
+
+```python
+import math
+
+from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
+
+objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
+
+run = OptimisationRun.without_training(
+    objective=objective,
+    surrogate=GPyTorchSurrogate(),
+    search_bounds=(-16.0, 16.0),
+    initial_train_x=[-8.0, 8.0],
+    max_iterations=20,
+    ei_threshold=0.002,
+    n_candidates=500,
+    lengthscale=2.0,
+    outputscale=1.0,
+    noise=2e-4,
+)
+run.run()
+run.plot_iterations()
+```
+
+It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
+`best_y = -0.9413`. Fixed hyperparameters (`without_training`) are why the
+GIF's second title line stays constant across frames; `with_training` would
+show them retuned every iteration.
+
 **Fit modes:** the two constructors select how GP hyperparameters are handled.
 
 - `OptimisationRun.with_training(...)` re-tunes lengthscale, outputscale, and noise at every iteration using [Adam](https://arxiv.org/abs/1412.6980) (`torch.optim.Adam`), a gradient descent variant with momentum and per-parameter step sizes: over `training_iter` steps it adjusts the hyperparameters to maximise the marginal log likelihood, meaning how plausible the observed training data is under a GP with those hyperparameters. Adam only fits the surrogate; it never evaluates the blackbox. Use this mode when you do not know good hyperparameters, which is the usual case.

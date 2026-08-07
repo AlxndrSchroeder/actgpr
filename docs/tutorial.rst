@@ -213,6 +213,48 @@ slider's final frame is the fit that triggered that convergence, titled
 "(converged, not evaluated)" since its candidate point was scored but
 never actually evaluated, so it carries no ``pred_error``/``improvement``.
 
+Each title's second line reports the hyperparameters of that iteration's
+fit. Under ``without_training`` they stay constant; under
+``with_training`` they change every iteration, since Adam retunes them.
+
+A harder example
+~~~~~~~~~~~~~~~~~
+
+``(x - 1)**2`` has a single minimum, so the search has little to explore.
+This configuration, the one behind the animation in the README, uses a
+multi-modal objective where the surrogate has to distinguish several local
+minima:
+
+.. code-block:: python
+
+   import math
+
+   from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
+
+   objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
+
+   run = OptimisationRun.without_training(
+       objective=objective,
+       surrogate=GPyTorchSurrogate(),
+       search_bounds=(-16.0, 16.0),
+       initial_train_x=[-8.0, 8.0],
+       max_iterations=20,
+       ei_threshold=0.002,
+       n_candidates=500,
+       lengthscale=2.0,
+       outputscale=1.0,
+       noise=2e-4,
+   )
+   run.run()
+   run.plot_iterations()
+
+It converges after 17 iterations via ``ei_threshold``, at
+``best_x = -1.4965``, ``best_y = -0.9413``. The true minimum sits at
+``x = -1.49593``, so the run lands within ``5.5e-4`` of it after only 18
+objective evaluations: the 2 initial points plus one per evaluated
+iteration. The 17th iteration triggered convergence and was never
+evaluated.
+
 Step 5: the reproducibility record (MRR)
 -----------------------------------------
 
