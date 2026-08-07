@@ -369,6 +369,24 @@ class OptimisationRun:
             "store_snapshots": self.store_snapshots,
         }
 
+    def _fitted_hyperparameters(self) -> dict[str, float] | None:
+        """Return the surrogate's final hyperparameters, or None if unavailable.
+
+        Read through an optional ``hyperparameters()`` method rather than
+        reaching into the surrogate's internals, so the backend stays
+        swappable: a surrogate that does not offer one simply contributes
+        nothing to the record, exactly as before. Also returns None when the
+        surrogate was never fitted, which happens if a run crashes before
+        completing its first iteration.
+        """
+        getter = getattr(self.surrogate, "hyperparameters", None)
+        if not callable(getter):
+            return None
+        try:
+            return getter()
+        except RuntimeError:
+            return None
+
     def _write_mrr_record(
         self,
         actual_run_dir: Path,
@@ -395,6 +413,7 @@ class OptimisationRun:
             stop_reason=stop_reason,
             n_iterations=n_iterations,
             convergence_snapshot=self._convergence_snapshot,
+            fitted_hyperparameters=self._fitted_hyperparameters(),
         )
         mrr.write_meta(
             actual_run_dir,
@@ -482,6 +501,13 @@ class OptimisationRun:
                 f"Finished after {n_iterations} iterations ({stop_reason}): "
                 f"best_x={best_x:.6f}, best_y={best_y:.6f}"
             )
+
+            fitted = self._fitted_hyperparameters()
+            if fitted is not None:
+                logger.info(
+                    "Final surrogate hyperparameters: "
+                    + ", ".join(f"{k}={v:.6g}" for k, v in fitted.items())
+                )
 
             # ── MRR: finalize (only if run_dir provided) ──
             if actual_run_dir is not None:

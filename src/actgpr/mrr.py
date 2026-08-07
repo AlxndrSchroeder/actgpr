@@ -178,6 +178,7 @@ def save_hdf5(
     stop_reason: str,
     n_iterations: int,
     convergence_snapshot: dict[str, object] | None = None,
+    fitted_hyperparameters: dict[str, float] | None = None,
 ) -> None:
     """Write a self-describing HDF5 file with the run history and results.
 
@@ -206,6 +207,9 @@ def save_hdf5(
         ``converged_f_var``/``converged_ei_scores``. That fit's candidate
         was never evaluated, so it has no place in ``history/`` or
         ``iterations/``, so this is the only place it is recorded.
+        When ``fitted_hyperparameters`` is given, also holds
+        ``fitted_lengthscale``/``fitted_outputscale``/``fitted_noise``,
+        the surrogate's hyperparameters as the run left them.
 
     Parameters
     ----------
@@ -213,6 +217,12 @@ def save_hdf5(
         The GP/EI snapshot of the fit that triggered ei_threshold
         convergence (``OptimisationRun._convergence_snapshot``), or None if
         the run stopped via max_iterations or store_snapshots was False.
+    fitted_hyperparameters : dict or None, optional
+        The surrogate's final hyperparameters, as returned by its
+        ``hyperparameters()`` method. None when the surrogate does not
+        expose one, or was never fitted (a crash before iteration 1).
+        Recording these matters most for ``with_training`` runs, where
+        ``config.json`` holds only the starting values Adam began from.
     """
     h5_path = run_dir / "results.h5"
     with h5py.File(h5_path, "w") as f:
@@ -264,6 +274,14 @@ def save_hdf5(
         final_group.attrs["n_iterations"] = n_iterations
         final_group.create_dataset("train_x", data=final_train_x.numpy())
         final_group.create_dataset("train_y", data=final_train_y.numpy())
+
+        # The surrogate's hyperparameters as the run left them. For
+        # with_training these are what Adam converged to and are recorded
+        # nowhere else: config.json is written before the loop starts, so it
+        # can only hold the starting values.
+        if fitted_hyperparameters is not None:
+            for name, value in fitted_hyperparameters.items():
+                final_group.attrs[f"fitted_{name}"] = float(value)
 
         if convergence_snapshot is not None:
             final_group.attrs["converged_max_ei"] = float(
