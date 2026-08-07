@@ -322,6 +322,26 @@ For a custom analysis, read the same series directly:
        prediction_error = f["history/prediction_error"][:]
        improvement = f["history/improvement"][:]
 
+That plot summarises the whole run. To revisit the *per-iteration* state
+instead, ``load_snapshots`` rebuilds exactly the snapshots
+``plot_iterations()`` browses in memory, so a finished run's iterations can
+be replotted from disk:
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+
+   snapshots = load_snapshots(run_dir)
+
+   _, axes = plt.subplots(2, 1)
+   plot_iteration_snapshot(snapshots[-1], axes)   # the last iteration
+
+This needs the run to have kept snapshots (the default). It raises
+``RuntimeError`` for a run executed with ``store_snapshots=False``, since
+the per-iteration GP arrays were never written.
+
 Parameter reference
 --------------------
 
