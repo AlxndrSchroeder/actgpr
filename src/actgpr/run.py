@@ -597,6 +597,11 @@ class OptimisationRun:
                         "train_x": self.train_x.clone(),
                         "train_y": self.train_y.clone(),
                     }
+                    # Carry the hyperparameters too, so the converged frame
+                    # reports the same fields as every other iteration.
+                    converged_hyperparameters = self._fitted_hyperparameters()
+                    if converged_hyperparameters is not None:
+                        self._convergence_snapshot.update(converged_hyperparameters)
                 break
 
             # 4. Evaluate objective at the next point
@@ -633,6 +638,15 @@ class OptimisationRun:
                 "prediction_error": prediction_error,
                 "improvement": improvement,
             }
+
+            # The hyperparameters of the fit that produced this iteration's
+            # EI landscape and next_point. In with_training they are retuned
+            # every iteration, so a single final value cannot describe the
+            # run; recording them per iteration is the only way to see how
+            # the surrogate evolved.
+            hyperparameters = self._fitted_hyperparameters()
+            if hyperparameters is not None:
+                iteration_data.update(hyperparameters)
 
             if self.store_snapshots:
                 iteration_data.update(

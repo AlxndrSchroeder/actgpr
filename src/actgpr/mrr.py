@@ -189,7 +189,9 @@ def save_hdf5(
     ``history/``
         Per-iteration scalar series, each a dataset of length ``n_iterations``
         aligned by the ``iteration`` index dataset: ``next_point``, ``new_y``,
-        ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``.
+        ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``,
+        plus ``lengthscale``/``outputscale``/``noise`` when the surrogate
+        reports them, giving the hyperparameters behind each iteration's fit.
         This is the single authoritative record of the run's scalar history.
         Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
@@ -253,6 +255,18 @@ def save_hdf5(
                 field,
                 data=np.array([res[field] for res in results], dtype=np.float64),
             )
+
+        # The surrogate hyperparameters behind each iteration's fit, present
+        # only when the surrogate exposes them (see OptimisationRun.
+        # _fitted_hyperparameters). Written as their own series so a
+        # with_training run's retuning is visible per iteration rather than
+        # collapsed to the final value.
+        for field in ("lengthscale", "outputscale", "noise"):
+            if results and all(field in res for res in results):
+                history.create_dataset(
+                    field,
+                    data=np.array([res[field] for res in results], dtype=np.float64),
+                )
 
         # Snapshot arrays, only when captured, one group per iteration.
         if store_snapshots:
