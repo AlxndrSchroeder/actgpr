@@ -12,6 +12,8 @@ plot_iteration_snapshot
     Draws one iteration's GP + EI side by side from a snapshot dict.
 plot_run_history
     Plots validation metrics vs. iteration from a saved run's results.h5.
+load_snapshots
+    Rebuilds a saved run's per-iteration snapshots from its results.h5.
 """
 
 from pathlib import Path
@@ -400,6 +402,100 @@ def plot_iteration_snapshot(
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
 
 
+def load_snapshots(run_dir: Path | str) -> list[dict]:
+    """Rebuild a saved run's per-iteration snapshots from its results.h5.
+
+    The per-iteration counterpart to ``plot_run_history``: it returns the
+    same snapshot dictionaries ``OptimisationRun`` holds in memory, so a
+    finished run's iterations can be replotted with
+    ``plot_iteration_snapshot`` without an OptimisationRun object. Without
+    this, anything replotting a saved run has to reassemble the snapshots
+    field by field and silently loses whichever fields it forgets.
+
+    The fit that triggered ``ei_threshold`` convergence is appended as the
+    final snapshot when the run recorded one. It carries no
+    ``prediction_error``/``improvement``, since its candidate was scored
+    but never evaluated.
+
+    Parameters
+    ----------
+    run_dir : Path or str
+        The run directory written by OptimisationRun.run() (the folder
+        containing ``results.h5``, not the file itself).
+
+    Returns
+    -------
+    list[dict]
+        One snapshot per iteration, in iteration order.
+
+    Raises
+    ------
+    FileNotFoundError
+        If run_dir does not contain a results.h5 file.
+    RuntimeError
+        If the run was executed without ``store_snapshots``, so the file
+        holds no per-iteration GP arrays to rebuild from.
+    """
+    h5_path = Path(run_dir) / "results.h5"
+    if not h5_path.exists():
+        raise FileNotFoundError(
+            f"No results.h5 found in {run_dir}. Is this a run directory "
+            "written by OptimisationRun.run()?"
+        )
+
+    snapshots: list[dict] = []
+    with h5py.File(h5_path, "r") as f:
+        if "iterations" not in f:
+            raise RuntimeError(
+                f"{h5_path} holds no per-iteration snapshots. Re-run with "
+                "store_snapshots=True to record them."
+            )
+
+        history = f["history"]
+        iterations = history["iteration"][:]
+
+        for row, iteration in enumerate(iterations):
+            group = f[f"iterations/iter_{int(iteration):03d}"]
+            snapshot: dict = {"iteration": int(iteration)}
+            for field in (
+                "next_point",
+                "new_y",
+                "current_best",
+                "max_ei",
+                "prediction_error",
+                "improvement",
+            ):
+                snapshot[field] = float(history[field][row])
+            # Recorded only when the surrogate reports them.
+            for field in HYPERPARAMETER_KEYS:
+                if field in history:
+                    snapshot[field] = float(history[field][row])
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                snapshot[field] = torch.from_numpy(group[field][:])
+            snapshot["train_x"] = torch.from_numpy(group["train_x"][:])
+            snapshot["train_y"] = torch.from_numpy(group["train_y"][:])
+            snapshots.append(snapshot)
+
+        final = f["final"]
+        if "converged_max_ei" in final.attrs:
+            converged: dict = {
+                "iteration": int(final.attrs["n_iterations"]),
+                "next_point": float(final.attrs["converged_next_point"]),
+                "current_best": float(final["train_y"][:].min()),
+                "max_ei": float(final.attrs["converged_max_ei"]),
+                "train_x": torch.from_numpy(final["train_x"][:]),
+                "train_y": torch.from_numpy(final["train_y"][:]),
+            }
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                converged[field] = torch.from_numpy(final[f"converged_{field}"][:])
+            for field in HYPERPARAMETER_KEYS:
+                if f"fitted_{field}" in final.attrs:
+                    converged[field] = float(final.attrs[f"fitted_{field}"])
+            snapshots.append(converged)
+
+    return snapshots
+
+
 def plot_run_history(
     run_dir: Path | str,
     ax: Axes | None = None,
@@ -409,7 +505,7 @@ def plot_run_history(
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
     Reads the ``/history`` series directly from ``results.h5``, with no
-    OptimisationRun object is needed, so a past run can be visualised from
+    OptimisationRun object needed, so a past run can be visualised from
     its run directory alone at any later time.
 
     Parameters
