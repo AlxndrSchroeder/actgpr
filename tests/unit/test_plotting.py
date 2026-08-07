@@ -228,6 +228,67 @@ class TestPlotIterationSnapshot:
         assert "converged" in gp_ax.get_title()
         assert "pred_error" not in gp_ax.get_title()
 
+    def test_title_reports_this_iterations_hyperparameters(self) -> None:
+        """Test that a snapshot's own hyperparameters reach the title.
+
+        In with_training they are retuned every iteration, so the title
+        must show the fit that produced this frame, not the run's final one.
+        """
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        candidates = torch.linspace(-1.0, 1.0, 10)
+        snapshot = {
+            "iteration": 3,
+            "candidates": candidates,
+            "f_mean": torch.zeros_like(candidates),
+            "f_var": torch.ones_like(candidates),
+            "train_x": torch.tensor([-1.0, 1.0]),
+            "train_y": torch.tensor([1.0, 0.5]),
+            "ei_scores": torch.linspace(0.0, 0.5, 10),
+            "next_point": 0.0,
+            "current_best": 0.5,
+            "max_ei": 0.5,
+            "prediction_error": 0.1,
+            "improvement": 0.2,
+            "lengthscale": 0.75,
+            "outputscale": 1.5,
+            "noise": 1e-4,
+        }
+
+        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        title = gp_ax.get_title()
+
+        assert "lengthscale: 0.75" in title
+        assert "outputscale: 1.5" in title
+
+    def test_title_omits_hyperparameters_when_absent(self) -> None:
+        """Test that a snapshot lacking them still produces a valid title.
+
+        Snapshots from a surrogate that does not report hyperparameters, or
+        rebuilt from an older results.h5, must still plot.
+        """
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        candidates = torch.linspace(-1.0, 1.0, 10)
+        snapshot = {
+            "iteration": 3,
+            "candidates": candidates,
+            "f_mean": torch.zeros_like(candidates),
+            "f_var": torch.ones_like(candidates),
+            "train_x": torch.tensor([-1.0, 1.0]),
+            "train_y": torch.tensor([1.0, 0.5]),
+            "ei_scores": torch.linspace(0.0, 0.5, 10),
+            "next_point": 0.0,
+            "current_best": 0.5,
+            "max_ei": 0.5,
+            "prediction_error": 0.1,
+            "improvement": 0.2,
+        }
+
+        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        title = gp_ax.get_title()
+
+        assert "lengthscale" not in title
+        assert "best_x" in title
+
 
 class TestPlotRunHistory:
     """Tests for plot_run_history — plotting a saved run from its path alone."""
@@ -338,6 +399,53 @@ class TestPlotRunHistory:
         assert fig.axes == [ax]
         labels = [line.get_label() for line in ax.get_lines()]
         assert "max_ei" not in labels
+
+    def test_title_reports_final_hyperparameters(self, tmp_path: Path) -> None:
+        """Test that the run's final hyperparameters reach the title.
+
+        Mirrors plot_iteration_snapshot, so the two plotting entry points
+        surface the same information about the surrogate.
+        """
+        mrr.save_hdf5(
+            tmp_path,
+            results=[
+                {
+                    "iteration": 1,
+                    "next_point": 0.5,
+                    "new_y": 0.25,
+                    "current_best": 0.25,
+                    "max_ei": 0.1,
+                    "prediction_error": 0.01,
+                    "improvement": 0.0,
+                }
+            ],
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 1.0]),
+            final_train_y=torch.tensor([1.0, 0.5]),
+            best_x=1.0,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=1,
+            fitted_hyperparameters={
+                "lengthscale": 1.25,
+                "outputscale": 2.5,
+                "noise": 1e-4,
+            },
+        )
+
+        _, ax = plot_run_history(tmp_path, show=False)
+        title = ax.get_title()
+
+        assert "lengthscale: 1.25" in title
+        assert "outputscale: 2.5" in title
+
+    def test_title_omits_hyperparameters_when_absent(self, run_dir: Path) -> None:
+        """Test that a record without them still produces a valid title."""
+        _, ax = plot_run_history(run_dir, show=False)
+
+        assert "lengthscale" not in ax.get_title()
+        assert "best_x" in ax.get_title()
 
     def test_legend_covers_both_axes(self, run_dir: Path) -> None:
         """Test that max_ei appears in the legend despite being on a twin axis.

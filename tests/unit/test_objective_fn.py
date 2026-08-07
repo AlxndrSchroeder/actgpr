@@ -123,17 +123,43 @@ class TestJitter:
 
         assert result != 4.0
 
-    def test_jitter_reproducible_with_same_seed(self) -> None:
-        """Test that jitter is drawn from torch's RNG, controlled by manual_seed."""
+    def test_jitter_reproducible_without_seeding_anything(self) -> None:
+        """Test that two ObjectiveFn objects produce the same noise sequence.
+
+        Each owns a generator seeded at construction, so a jittered run
+        reproduces without the caller seeding anything. Before this, an
+        unseeded jittered run gave a different answer every time and its
+        MRR record could not reproduce it.
+        """
         obj_a = ObjectiveFn(lambda x: x**2, jitter=0.5)
         obj_b = ObjectiveFn(lambda x: x**2, jitter=0.5)
 
-        torch.manual_seed(SEED)
-        result_a = obj_a.evaluate(1.0, 2.0, 3.0)
-        torch.manual_seed(SEED)
-        result_b = obj_b.evaluate(1.0, 2.0, 3.0)
+        assert obj_a.evaluate(1.0, 2.0, 3.0) == obj_b.evaluate(1.0, 2.0, 3.0)
 
-        assert result_a == result_b
+    def test_default_jitter_seed_is_25(self) -> None:
+        """Test the documented default seed."""
+        assert ObjectiveFn(jitter=0.1).seed == 25
+
+    def test_different_seeds_give_different_noise(self) -> None:
+        """Test that the seed actually selects the noise sequence."""
+        obj_a = ObjectiveFn(lambda x: x**2, jitter=0.5, seed=25)
+        obj_b = ObjectiveFn(lambda x: x**2, jitter=0.5, seed=26)
+
+        assert obj_a.evaluate(1.0) != obj_b.evaluate(1.0)
+
+    def test_jitter_does_not_disturb_global_torch_rng(self) -> None:
+        """Test that drawing jitter leaves the global RNG stream untouched.
+
+        Jitter uses its own generator, so adding it to an Objective cannot
+        shift any other seeded behaviour in a run.
+        """
+        torch.manual_seed(SEED)
+        expected = torch.randn(1).item()
+
+        torch.manual_seed(SEED)
+        ObjectiveFn(lambda x: x**2, jitter=0.5).evaluate(1.0, 2.0, 3.0)
+
+        assert torch.randn(1).item() == expected
 
     def test_jitter_is_independent_per_call_argument(self) -> None:
         """Test that jitter is drawn independently for each evaluated point.
@@ -152,7 +178,7 @@ class TestJitter:
     def test_repr_includes_jitter_when_nonzero(self) -> None:
         """Test that repr surfaces a non-default jitter value."""
         obj = ObjectiveFn(jitter=0.1)
-        assert repr(obj) == "ObjectiveFn(function=x^2, jitter=0.1)"
+        assert repr(obj) == "ObjectiveFn(function=x^2, jitter=0.1, seed=25)"
 
     def test_repr_omits_jitter_when_zero(self, objective: ObjectiveFn) -> None:
         """Test that repr matches prior output when jitter is off."""
