@@ -100,9 +100,8 @@ picked each next point, converging on the minimum as EI shrinks.
 
 ### Example output
 
-The animation below is **not** the quickstart example above. It shows a run on
-`sin(x) + x²/40` over `[-16, 16]`, a harder objective whose several local
-minima make the search behaviour easier to follow:
+Example animation for a run on the function `sin(x) + x²/40` over
+`[-16, 16]`. A harder objective with multiple local minima.
 
 <img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum">
 
