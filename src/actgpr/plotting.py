@@ -29,7 +29,7 @@ from actgpr.surrogate import GPyTorchSurrogate
 CI_STD_FACTOR = 2.0
 
 # Default log-scale EI y-axis floor, one order of magnitude below
-# ei_threshold — keeps the threshold line inside the plot rather than at
+# ei_threshold, which keeps the threshold line inside the plot rather than at
 # its bottom edge, with room to see the curve dip below it.
 EI_LOG_FLOOR_MARGIN = 0.1
 # Fallback log-scale floor when no ei_threshold is available.
@@ -210,14 +210,14 @@ def plot_acquisition(
     ylim : tuple[float, float] or None, optional
         Fixed (min, max) for the y-axis. If None (default), the range is
         either autoscaled (linear) or derived from ei_threshold (log_scale).
-        Pass a fixed range — e.g. the maximum EI score across an entire run —
+        Pass a fixed range, e.g. the maximum EI score across an entire run,
         when comparing EI landscapes across iterations, so a shrinking
         maximum is visible rather than being autoscaled to fill the axes
         every time.
     log_scale : bool, optional
         If True, draws the y-axis on a log scale, by default False. EI often
         shrinks by orders of magnitude as a run converges, which a linear
-        axis compresses into an invisible flat line — log scale keeps that
+        axis compresses into an invisible flat line, so log scale keeps that
         shrinkage visible. EI is exactly 0 at training points (no
         uncertainty); since a log axis cannot show zero, scores are clamped
         to the y-axis floor before plotting.
@@ -320,7 +320,7 @@ def plot_iteration_snapshot(
         A snapshot dictionary containing keys: ``candidates``, ``f_mean``,
         ``f_var``, ``train_x``, ``train_y``, ``ei_scores``, ``next_point``,
         ``iteration``, ``current_best``, ``max_ei``. ``prediction_error``
-        and ``improvement`` are optional — absent for a convergence
+        and ``improvement`` are optional and absent for a convergence
         snapshot, whose ``next_point`` was scored but never evaluated.
     axes : tuple[Axes, Axes]
         A pair of axes (gp_ax, ei_ax) to draw on.
@@ -329,7 +329,7 @@ def plot_iteration_snapshot(
         iterations being browsed. If None (default), the EI axis autoscales
         to this iteration's own scores.
     ei_log_scale : bool, optional
-        If True, draws the EI subplot's y-axis on a log scale — see
+        If True, draws the EI subplot's y-axis on a log scale. See
         plot_acquisition for why this matters as EI shrinks during a run,
         by default False.
     ei_threshold : float or None, optional
@@ -348,10 +348,18 @@ def plot_iteration_snapshot(
         ax=gp_ax,
         show=False,
     )
+    # current_best is the lowest Objective output so far, i.e. best_y. The
+    # input point that achieved it is the argmin of this snapshot's own
+    # train_y, which is the same tensor current_best was taken from, so the
+    # reported pair always belongs together.
+    best_index = int(torch.argmin(snapshot["train_y"]))
+    best_x = snapshot["train_x"][best_index].item()
+
     if "prediction_error" in snapshot:
         gp_ax.set_title(
             f"Iteration {snapshot['iteration']} | "
-            f"best: {snapshot['current_best']:.4f} | "
+            f"best_x: {best_x:.4f} | "
+            f"best_y: {snapshot['current_best']:.4f} | "
             f"pred_error: {snapshot['prediction_error']:.4f} | "
             f"improvement: {snapshot['improvement']:.4f}"
         )
@@ -360,8 +368,9 @@ def plot_iteration_snapshot(
         # scored but never evaluated, so there is no prediction_error or
         # improvement to report for it.
         gp_ax.set_title(
-            f"Iteration {snapshot['iteration']} (converged — not evaluated) | "
-            f"best: {snapshot['current_best']:.4f}"
+            f"Iteration {snapshot['iteration']} (converged, not evaluated) | "
+            f"best_x: {best_x:.4f} | "
+            f"best_y: {snapshot['current_best']:.4f}"
         )
 
     plot_acquisition(
@@ -385,7 +394,7 @@ def plot_run_history(
 ) -> tuple[Figure, Axes]:
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
-    Reads the ``/history`` series directly from ``results.h5`` — no
+    Reads the ``/history`` series directly from ``results.h5``, with no
     OptimisationRun object is needed, so a past run can be visualised from
     its run directory alone at any later time.
 
@@ -424,7 +433,7 @@ def plot_run_history(
     h5_path = Path(run_dir) / "results.h5"
     if not h5_path.exists():
         raise FileNotFoundError(
-            f"No results.h5 found in {run_dir} — is this a run directory "
+            f"No results.h5 found in {run_dir}. Is this a run directory "
             "written by OptimisationRun.run()?"
         )
 
@@ -434,6 +443,7 @@ def plot_run_history(
         prediction_error = history["prediction_error"][:]
         improvement = history["improvement"][:]
         max_ei = history["max_ei"][:]
+        best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
 
@@ -447,7 +457,13 @@ def plot_run_history(
     ax.axhline(0, color="grey", linestyle=":", linewidth=1)
     ax.set_xlabel("iteration")
     ax.set_ylabel("value")
-    ax.set_title(f"Run history | best_y: {best_y:.4f} | stop: {stop_reason}")
+    # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
+    # plotting entry points report the run's outcome identically whether it
+    # is read from memory or reconstructed from results.h5.
+    ax.set_title(
+        f"Run history | best_x: {best_x:.4f} | "
+        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    )
 
     if log_scale:
         # max_ei spans orders of magnitude while prediction_error and

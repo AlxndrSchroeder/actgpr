@@ -463,6 +463,101 @@ class TestOptimisationRunRun:
             # best_x/best_y fall back to the 2 initial points, the only
             # data that exists yet.
             assert f["final"].attrs["best_y"] == pytest.approx(4.0)
+            # The loop fits the surrogate before it calls the objective, so
+            # even a crash in iteration 1 leaves a fitted surrogate whose
+            # hyperparameters are worth recording for debugging.
+            assert "fitted_lengthscale" in f["final"].attrs
+
+
+class TestFittedHyperparameters:
+    """Tests for recording the surrogate's final hyperparameters in the MRR record."""
+
+    def test_recorded_for_a_training_run(self, tmp_path: Path) -> None:
+        """Test that the values Adam tuned to reach results.h5.
+
+        config.json is written before the loop starts and holds `None` for
+        lengthscale/outputscale in training mode, so without this the fitted
+        surrogate is absent from the record entirely.
+        """
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=50,
+            training_iter=10,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        expected = run.surrogate.hyperparameters()
+        (run_dir,) = list(tmp_path.iterdir())
+
+        with h5py.File(run_dir / "results.h5", "r") as f:
+            attrs = f["final"].attrs
+            assert attrs["fitted_lengthscale"] == pytest.approx(expected["lengthscale"])
+            assert attrs["fitted_outputscale"] == pytest.approx(expected["outputscale"])
+            assert attrs["fitted_noise"] == pytest.approx(expected["noise"])
+
+        config = json.loads((run_dir / "config.json").read_text())
+        assert config["lengthscale"] is None  # the gap this closes
+
+    def test_logged_to_run_log(self, tmp_path: Path) -> None:
+        """Test that the values are readable without opening results.h5."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=50,
+            training_iter=10,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        (run_dir,) = list(tmp_path.iterdir())
+        log_text = (run_dir / "run.log").read_text()
+
+        assert "Final surrogate hyperparameters" in log_text
+        assert "lengthscale=" in log_text
+
+    def test_surrogate_without_the_method_is_tolerated(
+        self, simple_run: OptimisationRun
+    ) -> None:
+        """Test that a surrogate not exposing hyperparameters() still works.
+
+        The surrogate is duck-typed, so OptimisationRun must not require the
+        method; a backend without one simply contributes nothing here.
+        """
+
+        class MinimalSurrogate:
+            """A surrogate exposing no hyperparameters() method."""
+
+        simple_run.surrogate = MinimalSurrogate()
+
+        assert simple_run._fitted_hyperparameters() is None
+
+    def test_unfitted_surrogate_is_tolerated(self) -> None:
+        """Test that an unfitted surrogate yields None rather than raising."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=50,
+            training_iter=10,
+        )
+
+        assert run._fitted_hyperparameters() is None
 
     def test_custom_objective_converges(self) -> None:
         """Test that the loop works with a custom objective function."""

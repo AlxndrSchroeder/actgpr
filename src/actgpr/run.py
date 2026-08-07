@@ -29,7 +29,7 @@ class OptimisationRun:
 
     The loop terminates when either the maximum EI score falls below
     ei_threshold (nothing left to gain) or the number of optimisation
-    iterations reaches max_iterations (budget cap) — whichever fires first.
+    iterations reaches max_iterations (budget cap), whichever fires first.
 
     Use the classmethods ``with_training`` and ``without_training`` to
     construct an OptimisationRun. The raw ``__init__`` is available for
@@ -86,8 +86,8 @@ class OptimisationRun:
             (e.g. [1, 2]) don't silently truncate later fractional points
             appended during the optimisation loop.
         max_iterations : int
-            Maximum number of active optimisation iterations — GPR fit
-            cycles — to execute (budget cap).
+            Maximum number of active optimisation iterations, meaning GPR fit
+            cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
         n_candidates : int, optional
@@ -136,7 +136,7 @@ class OptimisationRun:
         self.ei_threshold = ei_threshold
         self._run_dir = Path(run_dir) if run_dir is not None else None
 
-        # Private fit-mode configuration — set by classmethods
+        # Private fit-mode configuration, set by classmethods
         self._train_hyperparameters = _train_hyperparameters
         self._training_iter = _training_iter
         self._lengthscale = _lengthscale
@@ -151,7 +151,7 @@ class OptimisationRun:
             f"{self.train_x.numel()} inputs"
         )
 
-        # Create Acquisition once — it holds a reference to the surrogate
+        # Create Acquisition once; it holds a reference to the surrogate
         self._acq = Acquisition(surrogate, search_bounds, n_candidates)
 
         # Deferred-write accumulator for per-iteration data
@@ -159,13 +159,13 @@ class OptimisationRun:
 
         # Holds the Slider from plot_iterations() for its lifetime. Matplotlib
         # widgets stop responding if their only reference is garbage
-        # collected — see the docstring of plot_iterations() for why this
+        # collected. See the docstring of plot_iterations() for why this
         # must be an attribute, not a local variable.
         self._active_slider: Slider | None = None
 
         # GP/EI state of the fit that triggers ei_threshold convergence, if
         # any. That fit's next_point is scored but never evaluated, so it
-        # has no place in _results/history — this is its only record. Set
+        # has no place in _results/history, so this is its only record. Set
         # in _run_loop(), only when store_snapshots is True.
         self._convergence_snapshot: dict | None = None
 
@@ -200,8 +200,8 @@ class OptimisationRun:
         initial_train_x : torch.Tensor or list[float] of shape (n,)
             The initial input points to seed the optimisation loop.
         max_iterations : int
-            Maximum number of active optimisation iterations — GPR fit
-            cycles — to execute (budget cap).
+            Maximum number of active optimisation iterations, meaning GPR fit
+            cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
         n_candidates : int, optional
@@ -258,7 +258,7 @@ class OptimisationRun:
         """Construct an OptimisationRun with fixed GP hyperparameters.
 
         Each iteration fits the surrogate with the given lengthscale,
-        outputscale, and noise — no hyperparameter optimisation takes place.
+        outputscale, and noise, so no hyperparameter optimisation takes place.
 
         Parameters
         ----------
@@ -271,8 +271,8 @@ class OptimisationRun:
         initial_train_x : torch.Tensor or list[float] of shape (n,)
             The initial input points to seed the optimisation loop.
         max_iterations : int
-            Maximum number of active optimisation iterations — GPR fit
-            cycles — to execute (budget cap).
+            Maximum number of active optimisation iterations, meaning GPR fit
+            cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
         n_candidates : int, optional
@@ -333,7 +333,7 @@ class OptimisationRun:
         """Return all configuration parameters for MRR recording.
 
         ``"objective"`` is ``repr(self.objective)`` rather than a specific
-        field, since the Objective is duck-typed — OptimisationRun has no
+        field, since the Objective is duck-typed and OptimisationRun has no
         generic way to know what a particular Objective considers worth
         recording (e.g. ObjectiveFn's ``jitter``). repr() is the one thing
         every object provides, and any Objective can put whatever it wants
@@ -341,7 +341,7 @@ class OptimisationRun:
         """
 
         # TODO: for with_training runs, lengthscale/outputscale/noise are
-        #       tuned by Adam every iteration and never recorded — config.json
+        #       tuned by Adam every iteration and never recorded. config.json
         #       only stores them for without_training (where they're fixed
         #       inputs). Record the tuned values (surrogate.model.covar_module
         #       .base_kernel.lengthscale / .outputscale, surrogate.likelihood
@@ -369,6 +369,24 @@ class OptimisationRun:
             "store_snapshots": self.store_snapshots,
         }
 
+    def _fitted_hyperparameters(self) -> dict[str, float] | None:
+        """Return the surrogate's final hyperparameters, or None if unavailable.
+
+        Read through an optional ``hyperparameters()`` method rather than
+        reaching into the surrogate's internals, so the backend stays
+        swappable: a surrogate that does not offer one simply contributes
+        nothing to the record, exactly as before. Also returns None when the
+        surrogate was never fitted, which happens if a run crashes before
+        completing its first iteration.
+        """
+        getter = getattr(self.surrogate, "hyperparameters", None)
+        if not callable(getter):
+            return None
+        try:
+            return getter()
+        except RuntimeError:
+            return None
+
     def _write_mrr_record(
         self,
         actual_run_dir: Path,
@@ -395,6 +413,7 @@ class OptimisationRun:
             stop_reason=stop_reason,
             n_iterations=n_iterations,
             convergence_snapshot=self._convergence_snapshot,
+            fitted_hyperparameters=self._fitted_hyperparameters(),
         )
         mrr.write_meta(
             actual_run_dir,
@@ -417,12 +436,12 @@ class OptimisationRun:
         dict
             A dictionary containing the optimisation results:
 
-            - "best_x": float — the input point with the lowest Objective value.
-            - "best_y": float — the lowest Objective value found.
-            - "train_x": torch.Tensor — all evaluated input points.
-            - "train_y": torch.Tensor — all Objective outputs.
-            - "n_iterations": int — number of loop iterations executed.
-            - "stop_reason": str — "ei_threshold" if EI dropped below
+            - "best_x": float, the input point with the lowest Objective value.
+            - "best_y": float, the lowest Objective value found.
+            - "train_x": torch.Tensor, all evaluated input points.
+            - "train_y": torch.Tensor, all Objective outputs.
+            - "n_iterations": int, number of loop iterations executed.
+            - "stop_reason": str, "ei_threshold" if EI dropped below
               ei_threshold, "max_iterations" if budget cap was reached.
 
         Raises
@@ -483,6 +502,13 @@ class OptimisationRun:
                 f"best_x={best_x:.6f}, best_y={best_y:.6f}"
             )
 
+            fitted = self._fitted_hyperparameters()
+            if fitted is not None:
+                logger.info(
+                    "Final surrogate hyperparameters: "
+                    + ", ".join(f"{k}={v:.6g}" for k, v in fitted.items())
+                )
+
             # ── MRR: finalize (only if run_dir provided) ──
             if actual_run_dir is not None:
                 self._write_mrr_record(
@@ -501,7 +527,7 @@ class OptimisationRun:
             # Best-effort checkpoint: self.train_x/train_y/_results only
             # ever reflect fully-completed iterations (appended after each
             # iteration's data is snapshotted, see _run_loop step 7), so
-            # they're safe to persist even mid-crash — otherwise a failure
+            # they're safe to persist even mid-crash. Otherwise a failure
             # on iteration 19 of 20 would discard the whole run instead of
             # losing just the incomplete iteration.
             if actual_run_dir is not None:
@@ -518,11 +544,11 @@ class OptimisationRun:
                 )
                 logger.error(
                     f"Run crashed after {len(self._results)} completed "
-                    f"iterations — checkpoint written to {actual_run_dir}"
+                    f"iterations, checkpoint written to {actual_run_dir}"
                 )
             raise
         finally:
-            # Detach the run.log handler even if the loop raises — a leaked
+            # Detach the run.log handler even if the loop raises. A leaked
             # handler would duplicate every log line in a later run() and
             # keep the log file open.
             if file_handler is not None:
@@ -556,7 +582,7 @@ class OptimisationRun:
                 stop_reason = "ei_threshold"
                 if self.store_snapshots:
                     # This fit's next_point is never evaluated, so it has
-                    # no place among the normal per-iteration snapshots —
+                    # no place among the normal per-iteration snapshots, so
                     # record it separately (see docstring of run.py's
                     # convergence_snapshot in mrr.save_hdf5).
                     self._convergence_snapshot = {
@@ -580,7 +606,7 @@ class OptimisationRun:
             # improvement Δᵢ = y_best before this iteration − y_best after it;
             # zero when the new point does not improve on current_best.
             # next_point_mean is the surrogate's mean at next_point itself
-            # (post zoom-refinement) — not one of the coarse f_mean entries,
+            # (post zoom-refinement), not one of the coarse f_mean entries,
             # which cover the candidate grid rather than next_point exactly.
             predicted_y = self._acq.next_point_mean
             prediction_error = predicted_y - new_y
@@ -646,7 +672,7 @@ class OptimisationRun:
 
         The Slider is kept alive via ``self._active_slider`` for as long as
         the OptimisationRun exists. Matplotlib does not keep its own strong
-        reference to a Slider — if the only reference were a local variable
+        reference to a Slider. If the only reference were a local variable
         here, it would be garbage collected as soon as this method returns,
         which happens immediately whenever ``plt.show()`` does not block
         (backend- and environment-dependent). The slider would still be
@@ -658,15 +684,15 @@ class OptimisationRun:
             If True, draws the EI subplot's y-axis on a log scale, with the
             ei_threshold convergence criterion marked as a reference line.
             EI often shrinks by orders of magnitude as a run converges,
-            which a linear axis compresses into an invisible flat line —
+            which a linear axis compresses into an invisible flat line, so
             log scale keeps that shrinkage visible, so it is the default.
             Pass False for a linear EI axis.
 
         Notes
         -----
         If the run converged via ei_threshold, the final frame is the fit
-        that triggered convergence — its next_point was scored but never
-        evaluated, shown with a title noting "(converged — not evaluated)"
+        that triggered convergence. Its next_point was scored but never
+        evaluated, shown with a title noting "(converged, not evaluated)"
         instead of the usual pred_error/improvement values.
 
         Raises
@@ -682,7 +708,7 @@ class OptimisationRun:
                 "No snapshots available. Set store_snapshots=True before calling run()."
             )
 
-        # Fixed EI y-axis range shared across all iterations — otherwise each
+        # Fixed EI y-axis range shared across all iterations. Otherwise each
         # redraw autoscales to its own EI scores, hiding the shrinking max EI
         # that signals convergence.
         max_ei_overall = max(r["ei_scores"].max().item() for r in snapshots)

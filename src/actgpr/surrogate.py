@@ -185,11 +185,42 @@ class GPyTorchSurrogate:
         self.model.covar_module.outputscale = outputscale
         self.likelihood.noise = noise
 
-        # Freeze all parameters — no training
+        # Freeze all parameters, no training
         for param in self.model.parameters():
             param.requires_grad = False
         for param in self.likelihood.parameters():
             param.requires_grad = False
+
+    def hyperparameters(self) -> dict[str, float]:
+        """Return the GP's current kernel and likelihood hyperparameters.
+
+        After ``fit_no_training`` these are the values that were passed in.
+        After ``fit_and_train`` they are the values Adam arrived at, which
+        are otherwise not recoverable: ``config.json`` is written before the
+        loop starts and can only record the *starting* point.
+
+        Returns
+        -------
+        dict[str, float]
+            ``lengthscale``, ``outputscale``, and ``noise``.
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fitted yet.
+        """
+        if self.model is None or self.likelihood is None:
+            raise RuntimeError(
+                "The model must be fitted before reading hyperparameters."
+            )
+
+        return {
+            "lengthscale": float(
+                self.model.covar_module.base_kernel.lengthscale.item()
+            ),
+            "outputscale": float(self.model.covar_module.outputscale.item()),
+            "noise": float(self.likelihood.noise.item()),
+        }
 
     def predict(
         self,

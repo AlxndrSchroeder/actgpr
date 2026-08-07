@@ -1,4 +1,4 @@
-actgpr — Active GPR Optimisation
+actgpr: Active GPR Optimisation
 ================================
 
 ``actgpr`` finds the minimum of an expensive-to-evaluate scalar Objective by

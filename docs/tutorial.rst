@@ -14,11 +14,11 @@ Setup
    cd actgpr
    poetry install
 
-Step 1 — give it an Objective
+Step 1: give it an Objective
 ------------------------------
 
 ``actgpr`` minimises anything exposing ``evaluate(*x: float) -> tuple[float,
-...]`` — it never checks whether that object is a particular type, only
+...]``. It never checks whether that object is a particular type, only
 that the method exists (duck typing). Which of the two ways below to use
 depends on what you're wrapping.
 
@@ -26,8 +26,8 @@ Wrapping a plain function
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Use ``ObjectiveFn``, a convenience that turns any
-``Callable[[float], float]`` into an Objective — the right choice when your
-blackbox is already a simple function:
+``Callable[[float], float]`` into an Objective. This is the right choice
+when your blackbox is already a simple function:
 
 .. code-block:: python
 
@@ -53,7 +53,7 @@ them by their original type.
 Simulating experimental noise
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A real experiment's readings are noisy — an analytic stand-in like
+A real experiment's readings are noisy, while an analytic stand-in like
 ``my_blackbox`` above is not. Pass ``jitter`` to add independent Gaussian
 noise to each evaluation, simulating that sensor/measurement noise:
 
@@ -61,7 +61,7 @@ noise to each evaluation, simulating that sensor/measurement noise:
 
    noisy_objective = ObjectiveFn(my_blackbox, jitter=0.1)
 
-If you use jitter, set the surrogate's ``noise`` (Step 2) to match —
+If you use jitter, set the surrogate's ``noise`` (Step 2) to match.
 ``jitter`` is a standard deviation, ``noise`` is a variance, so pass
 ``noise=jitter**2``:
 
@@ -80,7 +80,7 @@ If you use jitter, set the surrogate's ``noise`` (Step 2) to match —
 Without this, the GP starts out assuming ``noise``'s default of near-zero
 observation noise (``1e-4``) and will overfit to what is actually random
 jitter, mistaking noise for real structure in the objective.
-``with_training`` still tunes ``noise`` further from there — passing a
+``with_training`` still tunes ``noise`` further from there, so passing a
 realistic starting value just gets it started in the right place. Jitter
 itself is drawn from ``torch``'s RNG, so ``torch.manual_seed(...)``
 reproduces it like everything else in ``actgpr``.
@@ -88,11 +88,12 @@ reproduces it like everything else in ``actgpr``.
 Wrapping your own simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you already have a simulation or experiment of your own — not just a
-bare function, but something with setup, configuration, or state involved —
-write your own class with an ``evaluate()`` method instead of reaching for
-``ObjectiveFn``. This is the more natural fit for anything beyond a single
-pure function call, and it requires no base class or registration:
+If you already have a simulation or experiment of your own, meaning not
+just a bare function but something with setup, configuration, or state
+involved, write your own class with an ``evaluate()`` method instead of
+reaching for ``ObjectiveFn``. This is the more natural fit for anything
+beyond a single pure function call, and it requires no base class or
+registration:
 
 .. code-block:: python
 
@@ -110,11 +111,11 @@ pure function call, and it requires no base class or registration:
 
    objective = MySimulation(config=...)
 
-``OptimisationRun`` only ever calls ``objective.evaluate(...)`` — it never
+``OptimisationRun`` only ever calls ``objective.evaluate(...)``. It never
 checks whether ``objective`` is an ``ObjectiveFn``, so a class like this
 one works exactly the same way.
 
-Step 2 — configure the run
+Step 2: configure the run
 --------------------------
 
 Three decisions matter most:
@@ -129,18 +130,19 @@ Three decisions matter most:
 
 ``ei_threshold``
     The convergence threshold: the run stops early once the best achievable
-    Expected Improvement falls below this value — meaning the surrogate sees
+    Expected Improvement falls below this value, meaning the surrogate sees
     nothing left to gain.
 
 You also choose a **fit mode**:
 
-- ``OptimisationRun.with_training(...)`` — the GP hyperparameters
-  (lengthscale, outputscale, noise) are re-tuned at every iteration using
+- ``OptimisationRun.with_training(...)`` re-tunes the GP hyperparameters
+  (lengthscale, outputscale, noise) at every iteration using
   `Adam <https://arxiv.org/abs/1412.6980>`_ (GPyTorch's ``torch.optim.Adam``
   integration), a gradient-descent variant that maximises the marginal log
-  likelihood — how plausible the observed training data is under the GP.
-  Use this when you do not know good hyperparameters — the usual case.
-- ``OptimisationRun.without_training(...)`` — hyperparameters stay fixed at
+  likelihood, meaning how plausible the observed training data is under the
+  GP. Use this when you do not know good hyperparameters, which is the
+  usual case.
+- ``OptimisationRun.without_training(...)`` keeps hyperparameters fixed at
   the values you pass. Use this for controlled comparisons or when good
   values are already known.
 
@@ -158,23 +160,23 @@ You also choose a **fit mode**:
        run_dir="results",            # write the MRR record
    )
 
-Step 3 — execute and interpret
+Step 3: execute and interpret
 ------------------------------
 
 .. code-block:: python
 
    result = run.run()
 
-   print(result["best_x"])       # ≈ 1.0  — input point with the lowest output
-   print(result["best_y"])       # ≈ 0.0  — the lowest output found
+   print(result["best_x"])       # ≈ 1.0  (input point with the lowest output)
+   print(result["best_y"])       # ≈ 0.0  (the lowest output found)
    print(result["n_iterations"])  # iterations actually executed
    print(result["stop_reason"])   # "ei_threshold" or "max_iterations"
 
 ``result["train_x"]`` and ``result["train_y"]`` hold every input point the
-run evaluated and the corresponding Objective outputs — the initial points
+run evaluated and the corresponding Objective outputs: the initial points
 first, then one point per iteration.
 
-Step 4 — browse the iterations
+Step 4: browse the iterations
 ------------------------------
 
 Per-iteration state is kept by default (``store_snapshots=True``), so you
@@ -189,8 +191,8 @@ An interactive matplotlib window opens with the GP prediction (mean, 95 %
 confidence band, training data) on top, the EI landscape below, and a
 slider to scrub through iterations.
 
-EI typically shrinks by orders of magnitude as a run converges — on a
-linear axis, later iterations would look like a flat line at zero with no
+EI typically shrinks by orders of magnitude as a run converges, so on a
+linear axis later iterations would look like a flat line at zero with no
 visible structure. The EI axis is therefore drawn on a log scale by
 default, with ``ei_threshold`` as a reference line. Pass ``log_scale=False``
 for a linear axis:
@@ -200,38 +202,39 @@ for a linear axis:
    run.plot_iterations(log_scale=False)
 
 If the run stopped because ``max_ei`` fell below ``ei_threshold``, the
-slider's final frame is the fit that triggered that convergence — titled
-"(converged — not evaluated)" since its candidate point was scored but
+slider's final frame is the fit that triggered that convergence, titled
+"(converged, not evaluated)" since its candidate point was scored but
 never actually evaluated, so it carries no ``pred_error``/``improvement``.
 
-Step 5 — the reproducibility record (MRR)
+Step 5: the reproducibility record (MRR)
 -----------------------------------------
 
 Because ``run_dir`` was given, the run created a timestamped folder under
 ``results/`` holding the five MRR artifacts:
 
-- ``config.json`` — every parameter used, written at the start of the run
-- ``manifest.json`` — a SHA-256 checksum of the inputs
-- ``meta.json`` — environment: package name, version, and repository, git
-  commit, Python/library versions, platform, timestamps, and output summary
-- ``run.log`` — a human-readable, per-iteration audit trail, ending with a
-  summary line giving ``best_x``/``best_y`` — the quickest way to read off
-  the identified minimum without opening ``results.h5`` or inspecting the
-  ``run.run()`` return value
-- ``results.h5`` — self-describing HDF5: configuration is stored as
+- ``config.json``: every parameter used, written at the start of the run
+- ``manifest.json``: a SHA-256 checksum of the inputs
+- ``meta.json``: environment, covering package name, version, and
+  repository, git commit, Python/library versions, platform, timestamps,
+  and output summary
+- ``run.log``: a human-readable, per-iteration audit trail, ending with a
+  summary line giving ``best_x``/``best_y``. That line is the quickest way
+  to read off the identified minimum without opening ``results.h5`` or
+  inspecting the ``run.run()`` return value
+- ``results.h5``: self-describing HDF5, where configuration is stored as
   attributes alongside the data, so the file can be understood on its own
 
 If the run raises partway through, ``meta.json`` and ``results.h5`` are
-still written — a best-effort checkpoint covering every iteration completed
-before the failure (``stop_reason="crashed"``) — and ``run.log`` ends with
+still written as a best-effort checkpoint covering every iteration completed
+before the failure (``stop_reason="crashed"``), and ``run.log`` ends with
 an error line instead of the summary line.
 
 Revisiting a saved run
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 ``plot_run_history`` builds the validation-metrics plot directly from a
-run directory — no ``OptimisationRun`` object needed, so a past run can be
-revisited at any later time:
+run directory, with no ``OptimisationRun`` object needed, so a past run can
+be revisited at any later time:
 
 .. code-block:: python
 
@@ -247,7 +250,7 @@ iteration: ``prediction_error`` shrinking towards zero shows the surrogate
 learning the blackbox; ``improvement`` flattening shows the optimisation
 converging.
 
-``max_ei`` is drawn on its own right-hand axis with a log scale — the same
+``max_ei`` is drawn on its own right-hand axis with a log scale, the same
 default as ``plot_iterations()``, and for the same reason: EI falls by
 orders of magnitude, so on the shared linear axis it would sit flat against
 zero and its decay towards ``ei_threshold`` would be invisible.
@@ -288,18 +291,18 @@ Shared parameters
    * - ``objective``
      - The wrapped blackbox function to minimise (an ``ObjectiveFn``).
    * - ``surrogate``
-     - The GP surrogate backend. Pass a fresh ``GPyTorchSurrogate()`` — it
-       holds fitted state internally, so do not reuse one across runs.
+     - The GP surrogate backend. Pass a fresh ``GPyTorchSurrogate()``, since
+       it holds fitted state internally, so do not reuse one across runs.
    * - ``search_bounds``
      - The closed interval ``(lo, hi)`` in which the algorithm searches for
        the minimum. The blackbox is never evaluated outside it.
    * - ``initial_train_x``
-     - Points where the search starts — the first surrogate is fitted to
+     - Points where the search starts. The first surrogate is fitted to
        these before the loop runs. By convention, use the two
        ``search_bounds`` endpoints.
    * - ``max_iterations``
      - Budget cap: the maximum number of active optimisation iterations
-       (GPR fit cycles) — not individual blackbox evaluations.
+       (GPR fit cycles), not individual blackbox evaluations.
    * - ``ei_threshold``
      - Convergence threshold: the run stops early once the best achievable
        Expected Improvement drops below this value.
@@ -308,13 +311,13 @@ Shared parameters
        scores every iteration.
    * - ``noise`` (default 1e-4)
      - Starting observation noise variance for the GP likelihood. In
-       ``with_training`` it is only a *starting point* — Adam tunes it
+       ``with_training`` it is only a *starting point*, since Adam tunes it
        further alongside lengthscale and outputscale. In
        ``without_training`` it stays fixed at this value for the whole run.
    * - ``store_snapshots`` (default True)
      - Keeps each iteration's full GP/EI arrays (in memory and under
        ``results.h5``'s ``iterations/`` group) so ``plot_iterations()`` can
-       browse them afterward. Set ``False`` to omit them — they are the
+       browse them afterward. Set ``False`` to omit them, since they are the
        bulk of ``results.h5``'s size. The
        ``prediction_error``/``improvement`` history used by
        ``plot_run_history()`` is recorded either way.
@@ -346,9 +349,9 @@ Shared parameters
    * - Parameter
      - Meaning
    * - ``lengthscale`` (default 1.0)
-     - Fixed RBF kernel lengthscale — never tuned.
+     - Fixed RBF kernel lengthscale, never tuned.
    * - ``outputscale`` (default 1.0)
-     - Fixed kernel signal variance — never tuned.
+     - Fixed kernel signal variance, never tuned.
 
 Where to go next
 ----------------

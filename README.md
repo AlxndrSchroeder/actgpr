@@ -158,6 +158,11 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
                  the GP/EI state of the fit that triggered convergence, whose
                  next_point was scored but never evaluated (so it has no
                  place in history/ or iterations/)
+                 + fitted_lengthscale/fitted_outputscale/fitted_noise, the
+                 surrogate's hyperparameters as the run left them. For a
+                 with_training run these are the values Adam converged to,
+                 which config.json cannot hold: it is written before the
+                 loop starts and records only the starting point
 ```
 
 To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error`, `improvement`, and `max_ei` vs. iteration straight from a run directory's `results.h5`, with no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk. As in `plot_iterations()`, `max_ei` is drawn on a log scale by default, on its own right-hand axis since it spans orders of magnitude while the other two are linear and signed. Pass `log_scale=False` to omit it:

@@ -103,7 +103,7 @@ def write_meta(
     """Write environment and output summary to meta.json.
 
     Includes the package name, version, and repository URL so a meta.json
-    file remains identifiable on its own — e.g. if shared or archived
+    file remains identifiable on its own, e.g. if shared or archived
     separately from this repository.
     """
     try:
@@ -178,6 +178,7 @@ def save_hdf5(
     stop_reason: str,
     n_iterations: int,
     convergence_snapshot: dict[str, object] | None = None,
+    fitted_hyperparameters: dict[str, float] | None = None,
 ) -> None:
     """Write a self-describing HDF5 file with the run history and results.
 
@@ -190,7 +191,7 @@ def save_hdf5(
         aligned by the ``iteration`` index dataset: ``next_point``, ``new_y``,
         ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``.
         This is the single authoritative record of the run's scalar history.
-        Covers only *evaluated* iterations — see ``convergence_snapshot``
+        Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
     ``iterations/iter_NNN/``
         Written only when ``store_snapshots`` is True: the GP snapshot arrays
@@ -200,12 +201,15 @@ def save_hdf5(
         Attributes ``best_x``, ``best_y``, ``stop_reason``, ``n_iterations``
         and the final ``train_x``/``train_y`` datasets. When ``stop_reason``
         is ``"ei_threshold"`` and ``convergence_snapshot`` is given, also
-        holds the GP/EI state of the fit that triggered convergence —
+        holds the GP/EI state of the fit that triggered convergence,
         attributes ``converged_max_ei``/``converged_next_point`` and
         datasets ``converged_candidates``/``converged_f_mean``/
         ``converged_f_var``/``converged_ei_scores``. That fit's candidate
         was never evaluated, so it has no place in ``history/`` or
-        ``iterations/`` — this is the only place it is recorded.
+        ``iterations/``, so this is the only place it is recorded.
+        When ``fitted_hyperparameters`` is given, also holds
+        ``fitted_lengthscale``/``fitted_outputscale``/``fitted_noise``,
+        the surrogate's hyperparameters as the run left them.
 
     Parameters
     ----------
@@ -213,6 +217,12 @@ def save_hdf5(
         The GP/EI snapshot of the fit that triggered ei_threshold
         convergence (``OptimisationRun._convergence_snapshot``), or None if
         the run stopped via max_iterations or store_snapshots was False.
+    fitted_hyperparameters : dict or None, optional
+        The surrogate's final hyperparameters, as returned by its
+        ``hyperparameters()`` method. None when the surrogate does not
+        expose one, or was never fitted (a crash before iteration 1).
+        Recording these matters most for ``with_training`` runs, where
+        ``config.json`` holds only the starting values Adam began from.
     """
     h5_path = run_dir / "results.h5"
     with h5py.File(h5_path, "w") as f:
@@ -244,7 +254,7 @@ def save_hdf5(
                 data=np.array([res[field] for res in results], dtype=np.float64),
             )
 
-        # Snapshot arrays, only when captured — one group per iteration.
+        # Snapshot arrays, only when captured, one group per iteration.
         if store_snapshots:
             iter_group = f.create_group("iterations")
             for res in results:
@@ -264,6 +274,14 @@ def save_hdf5(
         final_group.attrs["n_iterations"] = n_iterations
         final_group.create_dataset("train_x", data=final_train_x.numpy())
         final_group.create_dataset("train_y", data=final_train_y.numpy())
+
+        # The surrogate's hyperparameters as the run left them. For
+        # with_training these are what Adam converged to and are recorded
+        # nowhere else: config.json is written before the loop starts, so it
+        # can only hold the starting values.
+        if fitted_hyperparameters is not None:
+            for name, value in fitted_hyperparameters.items():
+                final_group.attrs[f"fitted_{name}"] = float(value)
 
         if convergence_snapshot is not None:
             final_group.attrs["converged_max_ei"] = float(

@@ -223,6 +223,56 @@ class TestGPyTorchSurrogateFitNoTraining:
 # ---------------------------------------------------------------------------
 
 
+class TestGPyTorchSurrogateHyperparameters:
+    """Tests for GPyTorchSurrogate.hyperparameters()."""
+
+    def test_raises_before_fitting(self) -> None:
+        """Test that reading hyperparameters off an unfitted surrogate is an error."""
+        model = GPyTorchSurrogate()
+
+        with pytest.raises(RuntimeError, match="must be fitted"):
+            model.hyperparameters()
+
+    def test_reports_the_values_given_to_fit_no_training(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that fixed hyperparameters are reported back unchanged."""
+        train_x, train_y = training_data
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            train_x, train_y, lengthscale=2.5, outputscale=3.5, noise=1e-3
+        )
+
+        hyperparameters = model.hyperparameters()
+
+        assert hyperparameters["lengthscale"] == pytest.approx(2.5, rel=1e-4)
+        assert hyperparameters["outputscale"] == pytest.approx(3.5, rel=1e-4)
+        assert hyperparameters["noise"] == pytest.approx(1e-3, rel=1e-4)
+
+    def test_reports_the_values_adam_tuned_to(
+        self,
+        training_data: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        """Test that trained hyperparameters differ from the starting point.
+
+        This is the case the MRR record depends on: config.json is written
+        before the loop and can only hold the starting values, so these are
+        recoverable nowhere else.
+        """
+        train_x, train_y = training_data
+        torch.manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_and_train(train_x, train_y, training_iter=25, noise=1e-4)
+
+        hyperparameters = model.hyperparameters()
+
+        assert set(hyperparameters) == {"lengthscale", "outputscale", "noise"}
+        assert all(isinstance(v, float) for v in hyperparameters.values())
+        # Adam moves the kernel away from GPyTorch's default starting point.
+        assert hyperparameters["lengthscale"] != pytest.approx(1.0, rel=1e-3)
+
+
 class TestGPyTorchSurrogatePredict:
     """Tests for GPyTorchSurrogate.predict()."""
 
