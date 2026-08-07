@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` for lengthscale/outputscale and only the *starting* noise. Read
   via an optional `hyperparameters()` method on the surrogate, so a
   backend without one is unaffected
+- `plotting.load_snapshots(run_dir)` rebuilds a saved run's per-iteration
+  GP/EI snapshots from its `results.h5`, the per-iteration counterpart to
+  `plot_run_history()`. Previously only `OptimisationRun` could produce
+  them, so anything replotting a finished run had to reassemble the
+  snapshots field by field and silently lost whichever fields it missed
 - `config.json` now records `repr(objective)` under `"objective"`, so two
   runs with identical search parameters but different Objectives (or
   different `ObjectiveFn` jitter) are distinguishable from their MRR record

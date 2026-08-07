@@ -205,6 +205,15 @@ from actgpr.plotting import plot_run_history
 plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
 ```
 
+For the per-iteration state rather than the summary, `load_snapshots(run_dir)` rebuilds the same snapshots `plot_iterations()` browses in memory, so a finished run's iterations can be replotted from disk (requires the run to have kept snapshots):
+
+```python
+from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+
+snapshots = load_snapshots(run_dir)
+plot_iteration_snapshot(snapshots[-1], axes)
+```
+
 ## Vocabulary
 
 ### The optimisation problem
@@ -289,6 +298,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
 | **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
+| **`load_snapshots()`** | Rebuilds a saved run's per-iteration GP/EI snapshots from its `results.h5`, so they can be replotted without an `OptimisationRun` object. |
 
 ## Development
 
