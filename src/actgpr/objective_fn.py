@@ -12,6 +12,11 @@ def _default_func(x: float) -> float:
 
 DEFAULT_FUNC = _default_func
 
+# Seed for ObjectiveFn's jitter generator. Fixed so that a jittered run is
+# reproducible out of the box: without it, the noise would differ between
+# runs and the MRR record could not reproduce its own result.
+DEFAULT_JITTER_SEED = 25
+
 
 class ObjectiveFn:
     """Objective function for active GPR optimisation.
@@ -27,6 +32,7 @@ class ObjectiveFn:
         self,
         func: Callable[[float], float] | None = None,
         jitter: float = 0.0,
+        seed: int = DEFAULT_JITTER_SEED,
     ) -> None:
         """Initialize the ObjectiveFn.
 
@@ -40,8 +46,13 @@ class ObjectiveFn:
             by default 0.0 (no noise). Simulates the sensor/measurement
             noise a real experiment would have; pairs with the surrogate's
             ``noise`` hyperparameter, which models exactly this observation
-            noise. Drawn from ``torch``'s RNG, so it is controlled by
-            ``torch.manual_seed(...)`` like the rest of the package.
+            noise.
+        seed : int, optional
+            Seed for the jitter noise, by default 25. The noise is drawn
+            from a generator owned by this ObjectiveFn, so a jittered run
+            is reproducible without the caller seeding anything, and
+            drawing jitter does not disturb the global ``torch`` RNG. Only
+            has an effect when ``jitter`` is non-zero.
 
         Raises
         ------
@@ -53,6 +64,8 @@ class ObjectiveFn:
 
         self.func = func if func is not None else DEFAULT_FUNC
         self.jitter = jitter
+        self.seed = seed
+        self._generator = torch.Generator().manual_seed(seed)
 
     def evaluate(self, *args: float) -> tuple[float, ...]:
         """Evaluate the objective at multiple input points.
@@ -84,6 +97,10 @@ class ObjectiveFn:
         If ``jitter`` is non-zero, independent Gaussian noise with that
         standard deviation is added to each result after ``func`` runs. The
         wrapped function itself always sees the exact, noise-free input.
+        The noise comes from this ObjectiveFn's own seeded generator, so
+        repeated calls advance it (the same input evaluated twice gives
+        different noise, as a real sensor would) while two ObjectiveFn
+        objects built with the same seed produce the same sequence.
         """
         if not args:
             raise ValueError("At least one input argument must be provided.")
@@ -114,7 +131,7 @@ class ObjectiveFn:
         ), f"Expected {len(args)} outputs, got {len(results)}"
 
         if self.jitter > 0:
-            noise = torch.randn(len(results)) * self.jitter
+            noise = torch.randn(len(results), generator=self._generator) * self.jitter
             results = [r + n.item() for r, n in zip(results, noise)]
 
         return tuple(results)
@@ -129,5 +146,11 @@ class ObjectiveFn:
             func_desc = "custom_function"
 
         if self.jitter > 0:
-            return f"ObjectiveFn(function={func_desc}, jitter={self.jitter})"
+            # The seed is only reported alongside jitter, because it is what
+            # makes a jittered run reproducible and config.json records this
+            # string as the run's Objective.
+            return (
+                f"ObjectiveFn(function={func_desc}, "
+                f"jitter={self.jitter}, seed={self.seed})"
+            )
         return f"ObjectiveFn(function={func_desc})"
