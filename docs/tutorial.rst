@@ -422,6 +422,34 @@ Shared parameters
    * - ``outputscale`` (default 1.0)
      - Fixed kernel signal variance, never tuned.
 
+Other plots
+-----------
+
+``run.plot_iterations()`` and ``plot_run_history()`` cover the two common
+cases, and ``load_snapshots()`` feeds saved runs back into the first.
+``actgpr.plotting`` also exposes three lower-level functions for building
+your own figures:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Function
+     - What it draws
+   * - ``plot_iteration_snapshot(snapshot, axes)``
+     - One iteration's GP and EI panels, onto axes you supply. Use it to
+       export single frames or lay several iterations side by side.
+   * - ``plot_surrogate(surrogate, test_x)``
+     - A fitted surrogate on its own, with no run and no EI panel.
+   * - ``plot_acquisition(candidates, ei_scores)``
+     - The EI landscape on its own, without the GP panel.
+   * - ``plot_gp(candidates, f_mean, f_var, train_x, train_y)``
+     - The lowest level: GP mean, 95 % band, and training data from raw
+       tensors. Every other GP plot delegates to it.
+
+The README's plotting section lists all of them together, including which
+default to a log-scaled EI axis.
+
 Where to go next
 ----------------
 
