@@ -166,7 +166,8 @@ class TestOptimisationRunInit:
             ei_threshold=0.01,
         )
         assert (
-            run._config_dict()["objective"] == "ObjectiveFn(function=x^2, jitter=0.1)"
+            run._config_dict()["objective"]
+            == "ObjectiveFn(function=x^2, jitter=0.1, seed=25)"
         )
 
 

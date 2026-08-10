@@ -7,7 +7,17 @@ import pytest
 import torch
 
 from actgpr import mrr
-from actgpr.plotting import plot_acquisition, plot_iteration_snapshot, plot_run_history
+from actgpr.objective_fn import ObjectiveFn
+from actgpr.run import OptimisationRun
+from actgpr.surrogate import GPyTorchSurrogate
+from actgpr.plotting import (
+    load_snapshots,
+    plot_acquisition,
+    plot_iteration_snapshot,
+    plot_run_history,
+)
+
+SEED = 25
 
 
 def _make_snapshot(iteration: int, ei_scores: torch.Tensor) -> dict:
@@ -228,6 +238,67 @@ class TestPlotIterationSnapshot:
         assert "converged" in gp_ax.get_title()
         assert "pred_error" not in gp_ax.get_title()
 
+    def test_title_reports_this_iterations_hyperparameters(self) -> None:
+        """Test that a snapshot's own hyperparameters reach the title.
+
+        In with_training they are retuned every iteration, so the title
+        must show the fit that produced this frame, not the run's final one.
+        """
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        candidates = torch.linspace(-1.0, 1.0, 10)
+        snapshot = {
+            "iteration": 3,
+            "candidates": candidates,
+            "f_mean": torch.zeros_like(candidates),
+            "f_var": torch.ones_like(candidates),
+            "train_x": torch.tensor([-1.0, 1.0]),
+            "train_y": torch.tensor([1.0, 0.5]),
+            "ei_scores": torch.linspace(0.0, 0.5, 10),
+            "next_point": 0.0,
+            "current_best": 0.5,
+            "max_ei": 0.5,
+            "prediction_error": 0.1,
+            "improvement": 0.2,
+            "lengthscale": 0.75,
+            "outputscale": 1.5,
+            "noise": 1e-4,
+        }
+
+        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        title = gp_ax.get_title()
+
+        assert "lengthscale: 0.75" in title
+        assert "outputscale: 1.5" in title
+
+    def test_title_omits_hyperparameters_when_absent(self) -> None:
+        """Test that a snapshot lacking them still produces a valid title.
+
+        Snapshots from a surrogate that does not report hyperparameters, or
+        rebuilt from an older results.h5, must still plot.
+        """
+        fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        candidates = torch.linspace(-1.0, 1.0, 10)
+        snapshot = {
+            "iteration": 3,
+            "candidates": candidates,
+            "f_mean": torch.zeros_like(candidates),
+            "f_var": torch.ones_like(candidates),
+            "train_x": torch.tensor([-1.0, 1.0]),
+            "train_y": torch.tensor([1.0, 0.5]),
+            "ei_scores": torch.linspace(0.0, 0.5, 10),
+            "next_point": 0.0,
+            "current_best": 0.5,
+            "max_ei": 0.5,
+            "prediction_error": 0.1,
+            "improvement": 0.2,
+        }
+
+        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        title = gp_ax.get_title()
+
+        assert "lengthscale" not in title
+        assert "best_x" in title
+
 
 class TestPlotRunHistory:
     """Tests for plot_run_history — plotting a saved run from its path alone."""
@@ -339,6 +410,53 @@ class TestPlotRunHistory:
         labels = [line.get_label() for line in ax.get_lines()]
         assert "max_ei" not in labels
 
+    def test_title_reports_final_hyperparameters(self, tmp_path: Path) -> None:
+        """Test that the run's final hyperparameters reach the title.
+
+        Mirrors plot_iteration_snapshot, so the two plotting entry points
+        surface the same information about the surrogate.
+        """
+        mrr.save_hdf5(
+            tmp_path,
+            results=[
+                {
+                    "iteration": 1,
+                    "next_point": 0.5,
+                    "new_y": 0.25,
+                    "current_best": 0.25,
+                    "max_ei": 0.1,
+                    "prediction_error": 0.01,
+                    "improvement": 0.0,
+                }
+            ],
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 1.0]),
+            final_train_y=torch.tensor([1.0, 0.5]),
+            best_x=1.0,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=1,
+            fitted_hyperparameters={
+                "lengthscale": 1.25,
+                "outputscale": 2.5,
+                "noise": 1e-4,
+            },
+        )
+
+        _, ax = plot_run_history(tmp_path, show=False)
+        title = ax.get_title()
+
+        assert "lengthscale: 1.25" in title
+        assert "outputscale: 2.5" in title
+
+    def test_title_omits_hyperparameters_when_absent(self, run_dir: Path) -> None:
+        """Test that a record without them still produces a valid title."""
+        _, ax = plot_run_history(run_dir, show=False)
+
+        assert "lengthscale" not in ax.get_title()
+        assert "best_x" in ax.get_title()
+
     def test_legend_covers_both_axes(self, run_dir: Path) -> None:
         """Test that max_ei appears in the legend despite being on a twin axis.
 
@@ -349,3 +467,128 @@ class TestPlotRunHistory:
 
         legend_labels = [text.get_text() for text in ax.get_legend().get_texts()]
         assert set(legend_labels) == {"prediction_error", "improvement", "max_ei"}
+
+
+class TestLoadSnapshots:
+    """Tests for rebuilding a saved run's snapshots from results.h5."""
+
+    def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
+        """Test the same clear error plot_run_history gives."""
+        with pytest.raises(FileNotFoundError, match="results.h5"):
+            load_snapshots(tmp_path)
+
+    def test_raises_when_run_stored_no_snapshots(self, tmp_path: Path) -> None:
+        """Test that a run without store_snapshots says so, rather than KeyError."""
+        mrr.save_hdf5(
+            tmp_path,
+            results=[
+                {
+                    "iteration": 1,
+                    "next_point": 0.5,
+                    "new_y": 0.25,
+                    "current_best": 0.25,
+                    "max_ei": 0.1,
+                    "prediction_error": 0.01,
+                    "improvement": 0.0,
+                }
+            ],
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 1.0]),
+            final_train_y=torch.tensor([1.0, 0.5]),
+            best_x=1.0,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=1,
+        )
+
+        with pytest.raises(RuntimeError, match="store_snapshots"):
+            load_snapshots(tmp_path)
+
+    def test_round_trips_the_in_memory_snapshots(self, tmp_path: Path) -> None:
+        """Test that what comes back matches what the run held in memory.
+
+        This is the contract anything replotting a saved run depends on:
+        reassembling snapshots by hand loses whichever fields the caller
+        forgets, which is how the demo GIF silently lost its hyperparameter
+        line.
+        """
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=4,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        (run_dir,) = list(tmp_path.iterdir())
+        loaded = load_snapshots(run_dir)
+        in_memory = [r for r in run._results if "candidates" in r]
+
+        assert len(loaded) == len(in_memory)
+        for from_disk, from_memory in zip(loaded, in_memory):
+            assert set(from_disk) == set(from_memory)
+            for key, value in from_memory.items():
+                if isinstance(value, torch.Tensor):
+                    assert torch.allclose(from_disk[key], value)
+                else:
+                    assert from_disk[key] == pytest.approx(value)
+
+    def test_includes_hyperparameters_and_convergence_frame(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that the converged fit comes back with hyperparameters too."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=20,
+            ei_threshold=0.05,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        result = run.run()
+        assert result["stop_reason"] == "ei_threshold"
+
+        (run_dir,) = list(tmp_path.iterdir())
+        loaded = load_snapshots(run_dir)
+
+        # The converged frame is last and carries no evaluation metrics.
+        converged = loaded[-1]
+        assert "prediction_error" not in converged
+        assert "lengthscale" in converged
+        assert all("lengthscale" in snapshot for snapshot in loaded)
+
+    def test_snapshots_are_plottable(self, tmp_path: Path) -> None:
+        """Test that a loaded snapshot feeds straight into plot_iteration_snapshot."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        (run_dir,) = list(tmp_path.iterdir())
+        loaded = load_snapshots(run_dir)
+
+        _, (gp_ax, ei_ax) = plt.subplots(2, 1)
+        plot_iteration_snapshot(loaded[-1], (gp_ax, ei_ax))
+
+        assert "best_x" in gp_ax.get_title()
+        assert "lengthscale" in gp_ax.get_title()

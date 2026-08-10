@@ -81,9 +81,16 @@ Without this, the GP starts out assuming ``noise``'s default of near-zero
 observation noise (``1e-4``) and will overfit to what is actually random
 jitter, mistaking noise for real structure in the objective.
 ``with_training`` still tunes ``noise`` further from there, so passing a
-realistic starting value just gets it started in the right place. Jitter
-itself is drawn from ``torch``'s RNG, so ``torch.manual_seed(...)``
-reproduces it like everything else in ``actgpr``.
+realistic starting value just gets it started in the right place.
+
+The jitter noise comes from a generator the ``ObjectiveFn`` owns, seeded
+with 25 by default, so a jittered run reproduces without you seeding
+anything and the noise does not disturb the global ``torch`` RNG. Pass a
+different ``seed`` for a different noise sequence:
+
+.. code-block:: python
+
+   ObjectiveFn(my_blackbox, jitter=0.1, seed=7)
 
 Wrapping your own simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -206,6 +213,48 @@ slider's final frame is the fit that triggered that convergence, titled
 "(converged, not evaluated)" since its candidate point was scored but
 never actually evaluated, so it carries no ``pred_error``/``improvement``.
 
+Each title's second line reports the hyperparameters of that iteration's
+fit. Under ``without_training`` they stay constant; under
+``with_training`` they change every iteration, since Adam retunes them.
+
+A harder example
+~~~~~~~~~~~~~~~~~
+
+``(x - 1)**2`` has a single minimum, so the search has little to explore.
+This configuration, the one behind the animation in the README, uses a
+multi-modal objective where the surrogate has to distinguish several local
+minima:
+
+.. code-block:: python
+
+   import math
+
+   from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
+
+   objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
+
+   run = OptimisationRun.without_training(
+       objective=objective,
+       surrogate=GPyTorchSurrogate(),
+       search_bounds=(-16.0, 16.0),
+       initial_train_x=[-8.0, 8.0],
+       max_iterations=20,
+       ei_threshold=0.002,
+       n_candidates=500,
+       lengthscale=2.0,
+       outputscale=1.0,
+       noise=2e-4,
+   )
+   run.run()
+   run.plot_iterations()
+
+It converges after 17 iterations via ``ei_threshold``, at
+``best_x = -1.4965``, ``best_y = -0.9413``. The true minimum sits at
+``x = -1.49593``, so the run lands within ``5.5e-4`` of it after only 18
+objective evaluations: the 2 initial points plus one per evaluated
+iteration. The 17th iteration triggered convergence and was never
+evaluated.
+
 Step 5: the reproducibility record (MRR)
 -----------------------------------------
 
@@ -272,6 +321,26 @@ For a custom analysis, read the same series directly:
        iteration = f["history/iteration"][:]
        prediction_error = f["history/prediction_error"][:]
        improvement = f["history/improvement"][:]
+
+That plot summarises the whole run. To revisit the *per-iteration* state
+instead, ``load_snapshots`` rebuilds exactly the snapshots
+``plot_iterations()`` browses in memory, so a finished run's iterations can
+be replotted from disk:
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+
+   snapshots = load_snapshots(run_dir)
+
+   _, axes = plt.subplots(2, 1)
+   plot_iteration_snapshot(snapshots[-1], axes)   # the last iteration
+
+This needs the run to have kept snapshots (the default). It raises
+``RuntimeError`` for a run executed with ``store_snapshots=False``, since
+the per-iteration GP arrays were never written.
 
 Parameter reference
 --------------------
@@ -352,6 +421,34 @@ Shared parameters
      - Fixed RBF kernel lengthscale, never tuned.
    * - ``outputscale`` (default 1.0)
      - Fixed kernel signal variance, never tuned.
+
+Other plots
+-----------
+
+``run.plot_iterations()`` and ``plot_run_history()`` cover the two common
+cases, and ``load_snapshots()`` feeds saved runs back into the first.
+``actgpr.plotting`` also exposes three lower-level functions for building
+your own figures:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Function
+     - What it draws
+   * - ``plot_iteration_snapshot(snapshot, axes)``
+     - One iteration's GP and EI panels, onto axes you supply. Use it to
+       export single frames or lay several iterations side by side.
+   * - ``plot_surrogate(surrogate, test_x)``
+     - A fitted surrogate on its own, with no run and no EI panel.
+   * - ``plot_acquisition(candidates, ei_scores)``
+     - The EI landscape on its own, without the GP panel.
+   * - ``plot_gp(candidates, f_mean, f_var, train_x, train_y)``
+     - The lowest level: GP mean, 95 % band, and training data from raw
+       tensors. Every other GP plot delegates to it.
+
+The README's plotting section lists all of them together, including which
+default to a log-scaled EI axis.
 
 Where to go next
 ----------------

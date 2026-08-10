@@ -23,10 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prediction_error` and `improvement` stay on the linear primary axis:
   the former is signed and the latter is frequently exactly zero, and a log
   axis can render neither. Pass `log_scale=False` to omit the `max_ei` axis
-- Per-iteration plot titles now report `best_x` alongside `best_y`. The
-  title previously showed only `best:` followed by a number, which was the
-  lowest Objective *output* so far but gave no hint of that, and never
-  showed the input point that achieved it
+- Plot titles now report `best_x` alongside `best_y`, in both
+  `plot_iterations()` and `plot_run_history()`. They previously showed only
+  `best:` followed by a number, which was the lowest Objective *output* so
+  far but gave no hint of that, and never showed the input point that
+  achieved it; `plot_run_history()` omitted `best_x` entirely
+- Plot titles carry a second line with the surrogate's hyperparameters:
+  that iteration's fit in `plot_iterations()`, the run's final values in
+  `plot_run_history()`. Omitted when the surrogate does not report them
 
 ### Added
 
@@ -45,8 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real experiment on an otherwise-analytic objective. Defaults to `0.0`
   (off, no behaviour change). Pairs with the surrogate's existing `noise`
   hyperparameter, which models exactly this observation noise in the GP
-  likelihood; jitter is drawn from `torch`'s RNG, so `torch.manual_seed(...)`
-  reproduces it like the rest of the package
+  likelihood. The noise comes from a generator the `ObjectiveFn` owns,
+  seeded with 25 by default (override with `seed=`), so a jittered run is
+  reproducible without the caller seeding anything and jitter does not
+  disturb the global `torch` RNG
+- `results.h5`'s `history/` group now records `lengthscale`, `outputscale`,
+  and `noise` per iteration, alongside the existing scalar series. In
+  `with_training` the surrogate is refitted every iteration and the
+  hyperparameters move substantially (lengthscale swung from 1.95 to 0.65
+  within two iterations in testing), so a single final value cannot
+  describe the run. Present only when the surrogate reports them
 - `results.h5`'s `final/` group and `run.log` now record the surrogate's
   final hyperparameters (`fitted_lengthscale`, `fitted_outputscale`,
   `fitted_noise`). For `with_training` runs these are the values Adam
@@ -55,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` for lengthscale/outputscale and only the *starting* noise. Read
   via an optional `hyperparameters()` method on the surrogate, so a
   backend without one is unaffected
+- `plotting.load_snapshots(run_dir)` rebuilds a saved run's per-iteration
+  GP/EI snapshots from its `results.h5`, the per-iteration counterpart to
+  `plot_run_history()`. Previously only `OptimisationRun` could produce
+  them, so anything replotting a finished run had to reassemble the
+  snapshots field by field and silently lost whichever fields it missed
 - `config.json` now records `repr(objective)` under `"objective"`, so two
   runs with identical search parameters but different Objectives (or
   different `ObjectiveFn` jitter) are distinguishable from their MRR record

@@ -100,11 +100,40 @@ picked each next point, converging on the minimum as EI shrinks.
 
 ### Example output
 
-The animation below is **not** the quickstart example above. It shows a run on
-`sin(x) + x²/40` over `[-16, 16]`, a harder objective whose several local
-minima make the search behaviour easier to follow:
+Example animation for a run on the function `sin(x) + x²/40` over
+`[-16, 16]`. A harder objective with multiple local minima.
 
 <img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum">
+
+The exact configuration behind it:
+
+```python
+import math
+
+from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
+
+objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
+
+run = OptimisationRun.without_training(
+    objective=objective,
+    surrogate=GPyTorchSurrogate(),
+    search_bounds=(-16.0, 16.0),
+    initial_train_x=[-8.0, 8.0],
+    max_iterations=20,
+    ei_threshold=0.002,
+    n_candidates=500,
+    lengthscale=2.0,
+    outputscale=1.0,
+    noise=2e-4,
+)
+run.run()
+run.plot_iterations()
+```
+
+It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
+`best_y = -0.9413`. Fixed hyperparameters (`without_training`) are why the
+GIF's second title line stays constant across frames; `with_training` would
+show them retuned every iteration.
 
 **Fit modes:** the two constructors select how GP hyperparameters are handled.
 
@@ -149,7 +178,10 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
 ```
 /            attrs: run configuration
 ├── history/     per-iteration scalar series (iteration, next_point, new_y,
-│                current_best, max_ei, prediction_error, improvement)
+│                current_best, max_ei, prediction_error, improvement, plus
+│                lengthscale/outputscale/noise when the surrogate reports
+│                them, so a with_training run's retuning is visible per
+│                iteration rather than collapsed to its final value)
 ├── iterations/  iter_NNN/ GP snapshot arrays (omitted if store_snapshots=False)
 └── final/       best_x, best_y, stop_reason, n_iterations + final train_x/train_y
                  + converged_max_ei/converged_next_point/converged_candidates/
@@ -172,6 +204,33 @@ from actgpr.plotting import plot_run_history
 
 plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
 ```
+
+For the per-iteration state rather than the summary, `load_snapshots(run_dir)` rebuilds the same snapshots `plot_iterations()` browses in memory, so a finished run's iterations can be replotted from disk (requires the run to have kept snapshots):
+
+```python
+from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+
+snapshots = load_snapshots(run_dir)
+plot_iteration_snapshot(snapshots[-1], axes)
+```
+
+## Plotting
+
+`OptimisationRun.plot_iterations()` covers the common case. Everything else lives in `actgpr.plotting` and is imported from there, since the package exports only the four core classes:
+
+| Use | What it draws |
+|---|---|
+| `run.plot_iterations()` | **Start here.** Interactive slider over every iteration of a finished run: GP fit on top, EI landscape below. A method on `OptimisationRun`, not in `actgpr.plotting`. |
+| `plot_run_history(run_dir)` | The whole run as one figure: `prediction_error`, `improvement`, and `max_ei` vs. iteration, read from a run directory. Use it to judge convergence at a glance, or to revisit a run you no longer have an object for. |
+| `load_snapshots(run_dir)` | Not a plot. Rebuilds a saved run's per-iteration snapshots so they can be fed to `plot_iteration_snapshot` without an `OptimisationRun`. |
+| `plot_iteration_snapshot(snapshot, axes)` | One iteration's GP + EI pair, drawn onto axes you supply. Use it to export single frames, build animations, or lay several iterations out side by side. |
+| `plot_surrogate(surrogate, test_x)` | A fitted surrogate on its own, with no run and no EI. Use it to inspect a `GPyTorchSurrogate` you fitted yourself. |
+| `plot_acquisition(candidates, ei_scores)` | The EI landscape on its own, without the GP panel. |
+| `plot_gp(candidates, f_mean, f_var, train_x, train_y)` | The lowest level: GP mean, 95 % band, and training data straight from tensors. Every other GP plot delegates to it. Use it when you have predictions from somewhere else. |
+
+`plot_gp`, `plot_surrogate`, `plot_acquisition`, and `plot_run_history` all take `ax=` to draw onto an existing axes and `show=False` to defer `plt.show()`, so they compose into multi-panel layouts. `plot_iteration_snapshot` takes an `axes` pair instead and never calls `plt.show()` itself, since it fills two panels at once.
+
+Log-scaling the EI axis is the default only on the two entry points meant to be called directly, `run.plot_iterations()` and `plot_run_history()`. The lower-level `plot_acquisition` and `plot_iteration_snapshot` default to linear (`log_scale=False` and `ei_log_scale=False`) and expect the caller to opt in, since they are usually driven by code that sets the axis range explicitly.
 
 ## Vocabulary
 
@@ -257,6 +316,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
 | **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
+| **`load_snapshots()`** | Rebuilds a saved run's per-iteration GP/EI snapshots from its `results.h5`, so they can be replotted without an `OptimisationRun` object. |
 
 ## Development
 

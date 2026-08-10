@@ -12,6 +12,8 @@ plot_iteration_snapshot
     Draws one iteration's GP + EI side by side from a snapshot dict.
 plot_run_history
     Plots validation metrics vs. iteration from a saved run's results.h5.
+load_snapshots
+    Rebuilds a saved run's per-iteration snapshots from its results.h5.
 """
 
 from pathlib import Path
@@ -34,6 +36,10 @@ CI_STD_FACTOR = 2.0
 EI_LOG_FLOOR_MARGIN = 0.1
 # Fallback log-scale floor when no ei_threshold is available.
 EI_LOG_FLOOR_DEFAULT = 1e-8
+
+# Surrogate hyperparameters reported in plot titles, when available. Named
+# once so the snapshot and run-history plots stay in step.
+HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
 
 
 def plot_gp(
@@ -356,7 +362,7 @@ def plot_iteration_snapshot(
     best_x = snapshot["train_x"][best_index].item()
 
     if "prediction_error" in snapshot:
-        gp_ax.set_title(
+        title = (
             f"Iteration {snapshot['iteration']} | "
             f"best_x: {best_x:.4f} | "
             f"best_y: {snapshot['current_best']:.4f} | "
@@ -367,11 +373,21 @@ def plot_iteration_snapshot(
         # The fit that triggered ei_threshold convergence: next_point was
         # scored but never evaluated, so there is no prediction_error or
         # improvement to report for it.
-        gp_ax.set_title(
+        title = (
             f"Iteration {snapshot['iteration']} (converged, not evaluated) | "
             f"best_x: {best_x:.4f} | "
             f"best_y: {snapshot['current_best']:.4f}"
         )
+
+    # The hyperparameters of this iteration's fit, on a second line so the
+    # first stays readable. Absent for snapshots from a surrogate that does
+    # not report them, so they are optional here too.
+    if all(key in snapshot for key in HYPERPARAMETER_KEYS):
+        title += "\n" + " | ".join(
+            f"{key}: {snapshot[key]:.4g}" for key in HYPERPARAMETER_KEYS
+        )
+
+    gp_ax.set_title(title)
 
     plot_acquisition(
         candidates=snapshot["candidates"],
@@ -386,6 +402,100 @@ def plot_iteration_snapshot(
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
 
 
+def load_snapshots(run_dir: Path | str) -> list[dict]:
+    """Rebuild a saved run's per-iteration snapshots from its results.h5.
+
+    The per-iteration counterpart to ``plot_run_history``: it returns the
+    same snapshot dictionaries ``OptimisationRun`` holds in memory, so a
+    finished run's iterations can be replotted with
+    ``plot_iteration_snapshot`` without an OptimisationRun object. Without
+    this, anything replotting a saved run has to reassemble the snapshots
+    field by field and silently loses whichever fields it forgets.
+
+    The fit that triggered ``ei_threshold`` convergence is appended as the
+    final snapshot when the run recorded one. It carries no
+    ``prediction_error``/``improvement``, since its candidate was scored
+    but never evaluated.
+
+    Parameters
+    ----------
+    run_dir : Path or str
+        The run directory written by OptimisationRun.run() (the folder
+        containing ``results.h5``, not the file itself).
+
+    Returns
+    -------
+    list[dict]
+        One snapshot per iteration, in iteration order.
+
+    Raises
+    ------
+    FileNotFoundError
+        If run_dir does not contain a results.h5 file.
+    RuntimeError
+        If the run was executed without ``store_snapshots``, so the file
+        holds no per-iteration GP arrays to rebuild from.
+    """
+    h5_path = Path(run_dir) / "results.h5"
+    if not h5_path.exists():
+        raise FileNotFoundError(
+            f"No results.h5 found in {run_dir}. Is this a run directory "
+            "written by OptimisationRun.run()?"
+        )
+
+    snapshots: list[dict] = []
+    with h5py.File(h5_path, "r") as f:
+        if "iterations" not in f:
+            raise RuntimeError(
+                f"{h5_path} holds no per-iteration snapshots. Re-run with "
+                "store_snapshots=True to record them."
+            )
+
+        history = f["history"]
+        iterations = history["iteration"][:]
+
+        for row, iteration in enumerate(iterations):
+            group = f[f"iterations/iter_{int(iteration):03d}"]
+            snapshot: dict = {"iteration": int(iteration)}
+            for field in (
+                "next_point",
+                "new_y",
+                "current_best",
+                "max_ei",
+                "prediction_error",
+                "improvement",
+            ):
+                snapshot[field] = float(history[field][row])
+            # Recorded only when the surrogate reports them.
+            for field in HYPERPARAMETER_KEYS:
+                if field in history:
+                    snapshot[field] = float(history[field][row])
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                snapshot[field] = torch.from_numpy(group[field][:])
+            snapshot["train_x"] = torch.from_numpy(group["train_x"][:])
+            snapshot["train_y"] = torch.from_numpy(group["train_y"][:])
+            snapshots.append(snapshot)
+
+        final = f["final"]
+        if "converged_max_ei" in final.attrs:
+            converged: dict = {
+                "iteration": int(final.attrs["n_iterations"]),
+                "next_point": float(final.attrs["converged_next_point"]),
+                "current_best": float(final["train_y"][:].min()),
+                "max_ei": float(final.attrs["converged_max_ei"]),
+                "train_x": torch.from_numpy(final["train_x"][:]),
+                "train_y": torch.from_numpy(final["train_y"][:]),
+            }
+            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
+                converged[field] = torch.from_numpy(final[f"converged_{field}"][:])
+            for field in HYPERPARAMETER_KEYS:
+                if f"fitted_{field}" in final.attrs:
+                    converged[field] = float(final.attrs[f"fitted_{field}"])
+            snapshots.append(converged)
+
+    return snapshots
+
+
 def plot_run_history(
     run_dir: Path | str,
     ax: Axes | None = None,
@@ -395,7 +505,7 @@ def plot_run_history(
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
     Reads the ``/history`` series directly from ``results.h5``, with no
-    OptimisationRun object is needed, so a past run can be visualised from
+    OptimisationRun object needed, so a past run can be visualised from
     its run directory alone at any later time.
 
     Parameters
@@ -446,6 +556,13 @@ def plot_run_history(
         best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
+        # The hyperparameters the run finished with, written by
+        # mrr.save_hdf5 when the surrogate reports them.
+        fitted = {
+            key: float(f["final"].attrs[f"fitted_{key}"])
+            for key in HYPERPARAMETER_KEYS
+            if f"fitted_{key}" in f["final"].attrs
+        }
 
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
@@ -460,10 +577,17 @@ def plot_run_history(
     # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
     # plotting entry points report the run's outcome identically whether it
     # is read from memory or reconstructed from results.h5.
-    ax.set_title(
+    title = (
         f"Run history | best_x: {best_x:.4f} | "
         f"best_y: {best_y:.4f} | stop: {stop_reason}"
     )
+    # Second line mirrors plot_iteration_snapshot's, except these are the
+    # values the run ended on rather than one iteration's.
+    if fitted:
+        title += "\nfinal " + " | ".join(
+            f"{key}: {value:.4g}" for key, value in fitted.items()
+        )
+    ax.set_title(title)
 
     if log_scale:
         # max_ei spans orders of magnitude while prediction_error and
