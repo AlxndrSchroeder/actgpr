@@ -19,7 +19,7 @@ from matplotlib.widgets import Slider
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
-from actgpr.plotting import HISTORY_FIELDS, _draw_iteration_slider, _draw_run_history
+from actgpr.plotting import METRIC_FIELDS, _draw_iteration_slider, _draw_metrics
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -47,7 +47,7 @@ class OptimisationRun:
         Execute the optimisation loop and return the results.
     plot_iterations()
         Open an interactive matplotlib slider to browse GP snapshots per iteration.
-    plot_history()
+    plot_metrics()
         Plot this run's validation metrics against iteration.
     """
 
@@ -106,7 +106,7 @@ class OptimisationRun:
             predictions and EI scores for later interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Raises
@@ -176,7 +176,7 @@ class OptimisationRun:
         # in _run_loop(), only when store_snapshots is True.
         self._convergence_snapshot: dict | None = None
 
-        # The convergence criterion that ended the run, for plot_history.
+        # The convergence criterion that ended the run, for plot_metrics.
         self._stop_reason: str = "not run"
 
         # The timestamped directory run() actually wrote to, set once the
@@ -234,7 +234,7 @@ class OptimisationRun:
             If True, also stores GP snapshots for interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Returns
@@ -308,7 +308,7 @@ class OptimisationRun:
             If True, also stores GP snapshots for interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Returns
@@ -701,17 +701,17 @@ class OptimisationRun:
 
         return stop_reason, n_iterations
 
-    def plot_history(
+    def plot_metrics(
         self,
         show: bool = True,
         log_scale: bool = True,
     ) -> tuple[Figure, np.ndarray]:
         """Plot this run's validation metrics against iteration.
 
-        The in-memory counterpart to ``plotting.plot_run_history``, which
-        reads the same series from a saved ``results.h5``. Both draw the
-        identical figure, one panel per metric. Use this one while the run
-        object is still to hand, including for a run that wrote no MRR
+        The from-the-run counterpart to ``plotting.load_metrics``, which
+        reads the same series back from a saved ``results.h5``. Both draw
+        the identical figure, one panel per metric. Use this one while the
+        run object is still to hand, including for a run that wrote no MRR
         record and therefore has no directory to read back.
 
         Parameters
@@ -733,16 +733,16 @@ class OptimisationRun:
         """
         if not self._results:
             raise RuntimeError(
-                "No history available. Call run() before plot_history()."
+                "No history available. Call run() before plot_metrics()."
             )
 
         best_index = torch.argmin(self.train_y)
 
-        return _draw_run_history(
+        return _draw_metrics(
             iteration=[record["iteration"] for record in self._results],
             series={
                 field: [record[field] for record in self._results]
-                for field in HISTORY_FIELDS
+                for field in METRIC_FIELDS
             },
             best_x=self.train_x[best_index].item(),
             best_y=self.train_y[best_index].item(),

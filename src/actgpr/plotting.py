@@ -1,17 +1,24 @@
 """Plotting utilities for active GPR optimisation.
 
-Two figures, each reachable two ways. From a run you still hold, use
-``OptimisationRun.plot_iterations()`` and ``OptimisationRun.plot_history()``.
-From a run on disk, use the two functions here. Everything else in this
-module is a private helper that these four are built from.
+Two figures, each reachable two ways. The ``plot_`` prefix draws from a run
+object you still hold and lives on ``OptimisationRun``; the ``load_``
+prefix reads a run back from its log directory and lives here:
+
+- the surrogate itself: ``run.plot_iterations()`` / ``load_iterations(dir)``
+- validation metrics: ``run.plot_metrics()`` / ``load_metrics(dir)``
+
+Each pair draws the identical figure, so which one to reach for depends
+solely on what you still have to hand. Everything else in this module is a
+private helper that these four are built from.
 
 Functions
 ---------
-plot_run_iterations
-    Browses a saved run's iterations with an interactive slider over the
-    GP fit and the EI landscape, one frame per iteration.
-plot_run_history
-    Plots a saved run's validation metrics against iteration.
+load_iterations
+    Reads a run directory and browses its iterations with an interactive
+    slider over the GP fit and the EI landscape, one frame per iteration.
+load_metrics
+    Reads a run directory and plots its validation metrics against
+    iteration, one panel per metric.
 """
 
 from collections.abc import Sequence
@@ -37,7 +44,7 @@ EI_LOG_FLOOR_MARGIN = 0.1
 EI_LOG_FLOOR_DEFAULT = 1e-8
 
 # Surrogate hyperparameters reported in plot titles, when available. Named
-# once so the snapshot and run-history plots stay in step.
+# once so the iteration and metric figures stay in step.
 HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
 
 
@@ -349,7 +356,7 @@ def _plot_iteration_snapshot(
 def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
     """Rebuild a saved run's per-iteration snapshots from its results.h5.
 
-    The per-iteration counterpart to ``plot_run_history``: it returns the
+    The per-iteration counterpart to ``load_metrics``: it returns the
     same snapshot dictionaries ``OptimisationRun`` holds in memory, so a
     finished run's iterations can be replotted without an OptimisationRun
     object. Pass the whole list to ``_draw_iteration_slider`` for the
@@ -458,7 +465,7 @@ def _draw_iteration_slider(
 
     This is the single definition of the slider figure. Both
     ``OptimisationRun.plot_iterations`` (passing the snapshots it holds in
-    memory) and ``plot_run_iterations`` (loading them from a saved
+    memory) and ``load_iterations`` (loading them from a saved
     ``results.h5``) delegate here, so the two cannot drift apart.
 
     Parameters
@@ -543,18 +550,17 @@ def _draw_iteration_slider(
     return slider
 
 
-def plot_run_iterations(
+def load_iterations(
     run_dir: Path | str,
     log_scale: bool = True,
     show: bool = True,
 ) -> Slider:
     """Browse a saved run's iterations with the same slider as a live run.
 
-    The on-disk counterpart to ``OptimisationRun.plot_iterations()``, and
-    the one-call form of ``_load_iteration_snapshots`` followed by
-    ``_draw_iteration_slider``: it reads the snapshots *and* the run's
-    ``ei_threshold`` from ``results.h5``, so the threshold does not have to
-    be looked up by hand, then opens the identical interactive figure.
+    The from-the-logs counterpart to ``OptimisationRun.plot_iterations()``:
+    it reads a run directory's ``results.h5`` and opens the identical
+    interactive figure, so a run finished last month can be stepped through
+    exactly like one still in memory.
 
     Parameters
     ----------
@@ -588,13 +594,13 @@ def plot_run_iterations(
     )
 
 
-# The validation metrics shown by the run-history figure, one panel each,
-# in reading order. Named once so the memory and on-disk routes cannot
-# drift apart, and so a panel is added by editing this tuple alone.
-HISTORY_FIELDS = ("current_best", "improvement", "max_ei", "prediction_error")
+# The validation metrics, one panel each, in reading order. Named once so
+# plot_metrics and load_metrics cannot drift apart, and so a panel is added
+# by editing this tuple alone.
+METRIC_FIELDS = ("current_best", "improvement", "max_ei", "prediction_error")
 
 
-def _draw_run_history(
+def _draw_metrics(
     iteration: Sequence[float],
     series: dict[str, Sequence[float]],
     best_x: float,
@@ -604,11 +610,11 @@ def _draw_run_history(
     show: bool = True,
     log_scale: bool = True,
 ) -> tuple[Figure, np.ndarray]:
-    """Draw the run-history figure from already-loaded series.
+    """Draw the validation-metrics figure from already-loaded series.
 
     The single definition of this figure, shared by
-    ``OptimisationRun.plot_history`` (which passes the series it holds in
-    memory) and ``plot_run_history`` (which reads them from a saved
+    ``OptimisationRun.plot_metrics`` (which passes the series it holds in
+    memory) and ``load_metrics`` (which reads them from a saved
     ``results.h5``), so the two cannot drift apart.
 
     One panel per metric rather than one shared axes: the four series have
@@ -622,7 +628,7 @@ def _draw_run_history(
     iteration : sequence of float
         The iteration numbers, the shared x-axis of every panel.
     series : dict
-        The per-iteration values, keyed by the names in HISTORY_FIELDS.
+        The per-iteration values, keyed by the names in METRIC_FIELDS.
         All entries must be the same length as iteration.
     best_x, best_y : float
         The run's outcome, reported in the figure title.
@@ -645,7 +651,7 @@ def _draw_run_history(
     """
     fig, axes = plt.subplots(2, 2, figsize=(11, 8))
 
-    for ax, field in zip(axes.flatten(), HISTORY_FIELDS):
+    for ax, field in zip(axes.flatten(), METRIC_FIELDS):
         ax.plot(iteration, series[field], "o-", color="tab:blue")
         ax.axhline(0, color="grey", linestyle=":", linewidth=1)
         ax.set_xlabel("iteration")
@@ -653,7 +659,7 @@ def _draw_run_history(
         ax.set_title(field)
 
     if log_scale:
-        axes.flatten()[HISTORY_FIELDS.index("max_ei")].set_yscale("log")
+        axes.flatten()[METRIC_FIELDS.index("max_ei")].set_yscale("log")
 
     # Same best_x/best_y labelling as the iteration snapshots, so the two
     # figures report the run's outcome identically whether it comes from
@@ -675,15 +681,15 @@ def _draw_run_history(
     return fig, axes
 
 
-def plot_run_history(
+def load_metrics(
     run_dir: Path | str,
     show: bool = True,
     log_scale: bool = True,
 ) -> tuple[Figure, np.ndarray]:
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
-    The on-disk counterpart to ``OptimisationRun.plot_history()``: it reads
-    the ``/history`` series straight from ``results.h5``, with no
+    The from-the-logs counterpart to ``OptimisationRun.plot_metrics()``: it
+    reads the ``/history`` series straight from ``results.h5``, with no
     OptimisationRun object needed, so a past run can be visualised from its
     run directory alone at any later time. Both open the identical figure.
 
@@ -719,7 +725,7 @@ def plot_run_history(
     with h5py.File(h5_path, "r") as f:
         history = f["history"]
         iteration = history["iteration"][:]
-        series = {field: history[field][:] for field in HISTORY_FIELDS}
+        series = {field: history[field][:] for field in METRIC_FIELDS}
         best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
@@ -731,7 +737,7 @@ def plot_run_history(
             if f"fitted_{key}" in f["final"].attrs
         }
 
-    return _draw_run_history(
+    return _draw_metrics(
         iteration=iteration,
         series=series,
         best_x=best_x,

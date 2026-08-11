@@ -12,13 +12,13 @@ from actgpr.objective_fn import ObjectiveFn
 from actgpr.run import OptimisationRun
 from actgpr.surrogate import GPyTorchSurrogate
 from actgpr.plotting import (
-    HISTORY_FIELDS,
+    METRIC_FIELDS,
     _draw_iteration_slider,
     _load_iteration_snapshots,
     _plot_acquisition,
     _plot_iteration_snapshot,
-    plot_run_history,
-    plot_run_iterations,
+    load_metrics,
+    load_iterations,
 )
 
 SEED = 25
@@ -305,7 +305,7 @@ class TestPlotIterationSnapshot:
 
 
 class TestPlotRunHistory:
-    """Tests for plot_run_history — plotting a saved run from its path alone."""
+    """Tests for load_metrics — plotting a saved run from its path alone."""
 
     @pytest.fixture()
     def run_dir(self, tmp_path: Path) -> Path:
@@ -339,11 +339,11 @@ class TestPlotRunHistory:
     def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
         """Test that a clear error is raised for a directory without results.h5."""
         with pytest.raises(FileNotFoundError, match="results.h5"):
-            plot_run_history(tmp_path, show=False)
+            load_metrics(tmp_path, show=False)
 
     def test_accepts_only_the_run_directory(self, run_dir: Path) -> None:
         """Test that the run directory alone is enough to build the plot."""
-        fig, axes = plot_run_history(run_dir, show=False)
+        fig, axes = load_metrics(run_dir, show=False)
 
         assert fig is not None
         assert axes.shape == (2, 2)
@@ -354,10 +354,10 @@ class TestPlotRunHistory:
         The four series have unrelated units and ranges, so one shared axes
         would flatten all but the largest into a line along zero.
         """
-        _, axes = plot_run_history(run_dir, show=False)
+        _, axes = load_metrics(run_dir, show=False)
 
         titles = [ax.get_title() for ax in axes.flatten()]
-        assert titles == list(HISTORY_FIELDS)
+        assert titles == list(METRIC_FIELDS)
 
         # Each panel plots one point per iteration, plus the zero reference
         # line the metric is read against.
@@ -372,7 +372,7 @@ class TestPlotRunHistory:
         results.h5 reports its outcome the same way as one plotted straight
         from memory. `best:` alone is ambiguous about which of x or y it is.
         """
-        fig, _ = plot_run_history(run_dir, show=False)
+        fig, _ = load_metrics(run_dir, show=False)
         title = fig._suptitle.get_text()
 
         assert "best_x: 1.0000" in title
@@ -381,7 +381,7 @@ class TestPlotRunHistory:
 
     def test_accepts_string_path(self, run_dir: Path) -> None:
         """Test that a plain string path works, not just a Path object."""
-        _, axes = plot_run_history(str(run_dir), show=False)
+        _, axes = load_metrics(str(run_dir), show=False)
         assert axes.shape == (2, 2)
 
     def test_max_ei_panel_is_log_scaled_by_default(self, run_dir: Path) -> None:
@@ -391,9 +391,9 @@ class TestPlotRunHistory:
         orders of magnitude as a run converges, and a linear axis compresses
         that shrinkage into an invisible flat line at zero.
         """
-        _, axes = plot_run_history(run_dir, show=False)
+        _, axes = load_metrics(run_dir, show=False)
 
-        panels = dict(zip(HISTORY_FIELDS, axes.flatten()))
+        panels = dict(zip(METRIC_FIELDS, axes.flatten()))
         assert panels["max_ei"].get_yscale() == "log"
 
     def test_other_panels_stay_linear(self, run_dir: Path) -> None:
@@ -402,15 +402,15 @@ class TestPlotRunHistory:
         prediction_error is signed and improvement is frequently exactly 0,
         neither of which a log axis can render, so only max_ei goes log.
         """
-        _, axes = plot_run_history(run_dir, show=False)
+        _, axes = load_metrics(run_dir, show=False)
 
-        panels = dict(zip(HISTORY_FIELDS, axes.flatten()))
+        panels = dict(zip(METRIC_FIELDS, axes.flatten()))
         for field in ("current_best", "improvement", "prediction_error"):
             assert panels[field].get_yscale() == "linear"
 
     def test_log_scale_false_leaves_every_panel_linear(self, run_dir: Path) -> None:
         """Test that opting out drops the log axis on the max_ei panel too."""
-        _, axes = plot_run_history(run_dir, show=False, log_scale=False)
+        _, axes = load_metrics(run_dir, show=False, log_scale=False)
 
         assert all(ax.get_yscale() == "linear" for ax in axes.flatten())
 
@@ -448,7 +448,7 @@ class TestPlotRunHistory:
             },
         )
 
-        fig, _ = plot_run_history(tmp_path, show=False)
+        fig, _ = load_metrics(tmp_path, show=False)
         title = fig._suptitle.get_text()
 
         assert "lengthscale: 1.25" in title
@@ -456,7 +456,7 @@ class TestPlotRunHistory:
 
     def test_title_omits_hyperparameters_when_absent(self, run_dir: Path) -> None:
         """Test that a record without them still produces a valid title."""
-        fig, _ = plot_run_history(run_dir, show=False)
+        fig, _ = load_metrics(run_dir, show=False)
         title = fig._suptitle.get_text()
 
         assert "lengthscale" not in title
@@ -467,7 +467,7 @@ class TestLoadSnapshots:
     """Tests for rebuilding a saved run's snapshots from results.h5."""
 
     def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
-        """Test the same clear error plot_run_history gives."""
+        """Test the same clear error load_metrics gives."""
         with pytest.raises(FileNotFoundError, match="results.h5"):
             _load_iteration_snapshots(tmp_path)
 
@@ -621,7 +621,7 @@ class TestPlotRunIterations:
         monkeypatch.setattr(plt, "show", lambda: None)
         run_dir, _ = saved_run
 
-        slider = plot_run_iterations(run_dir)
+        slider = load_iterations(run_dir)
 
         assert slider is not None
         assert slider.valmin == 1
@@ -641,7 +641,7 @@ class TestPlotRunIterations:
         live_title = plt.gcf().axes[0].get_title()
         live_frames = run._active_slider.valmax
 
-        slider = plot_run_iterations(run_dir)
+        slider = load_iterations(run_dir)
         disk_title = plt.gcf().axes[0].get_title()
 
         assert slider.valmax == live_frames
@@ -653,7 +653,7 @@ class TestPlotRunIterations:
         """Test that loading then plotting the snapshots also gives a slider.
 
         The documented two-call route for a saved run must reach the same
-        interactive figure as the one-call plot_run_iterations, otherwise
+        interactive figure as the one-call load_iterations, otherwise
         the loader's output is only usable for static frames.
         """
         monkeypatch.setattr(plt, "show", lambda: None)
@@ -709,4 +709,4 @@ class TestPlotRunIterations:
         )
 
         with pytest.raises(RuntimeError, match="store_snapshots"):
-            plot_run_iterations(tmp_path)
+            load_iterations(tmp_path)

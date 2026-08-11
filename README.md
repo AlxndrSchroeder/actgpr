@@ -132,9 +132,9 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
 
-`run.plot_history()` summarises the same run as four metrics against iteration, one panel each:
+`run.plot_metrics()` summarises the same run as four metrics against iteration, one panel each:
 
-<img src="assets/run_history_demo.png" width="700" alt="current_best, improvement, max_ei and prediction_error against iteration for the same run">
+<img src="assets/plot_metrics_demo.png" width="700" alt="current_best, improvement, max_ei and prediction_error against iteration for the same run">
 
 - **`current_best`** is the lowest objective value found so far. It steps down and then flattens, which is the run finding the minimum and then confirming it.
 - **`improvement`** is how much each evaluation lowered `current_best`. It spikes early, then sits at zero once the optimiser is refining rather than discovering. Flat `improvement` while `max_ei` is still high means the search is exploring, not finished.
@@ -199,7 +199,7 @@ run = OptimisationRun.without_training(
 result = run.run()
 ```
 
-Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them, since they are the bulk of `results.h5`'s size. The validation metrics shown by `plot_run_history()` are recorded either way, regardless of this flag.
+Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them, since they are the bulk of `results.h5`'s size. The validation metrics shown by `load_metrics()` are recorded either way, regardless of this flag.
 
 EI often shrinks by orders of magnitude as a run converges, enough to look like a flat line at zero on a linear axis. `plot_iterations()` therefore draws the EI axis on a log scale by default, with `ei_threshold` as a reference line so you can see the EI curve cross into converged territory. Pass `log_scale=False` for a linear axis.
 
@@ -243,18 +243,18 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
 
 To browse `results.h5` without writing code, the [H5Web](https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web) VS Code extension opens HDF5 files directly in the editor, with the groups, attributes, and plots of any dataset.
 
-Both figures can also be rebuilt from a run directory alone, with no `OptimisationRun` object, so they work on any run you (or someone else) have on disk:
+Both figures can also be rebuilt from a run's log directory alone, with no `OptimisationRun` object, so they work on any run you (or someone else) have on disk:
 
 ```python
-from actgpr.plotting import plot_run_history, plot_run_iterations
+from actgpr.plotting import load_iterations, load_metrics
 
 run_dir = "results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002"
 
-plot_run_history(run_dir)            # the four validation metrics
-slider = plot_run_iterations(run_dir)  # the interactive slider
+slider = load_iterations(run_dir)  # the interactive slider
+load_metrics(run_dir)              # the four validation metrics
 ```
 
-`plot_run_iterations` needs the run to have kept snapshots (the default); `plot_run_history` works either way, since the validation metrics are always recorded. Keep the returned `Slider` in a variable, or matplotlib collects it and it stops responding to drags.
+`load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. Keep the returned `Slider` in a variable, or matplotlib collects it and it stops responding to drags.
 
 ## Plotting
 
@@ -262,10 +262,10 @@ Two figures, each reachable two ways. That is the whole plotting API:
 
 | | The surrogate itself | Validation metrics |
 |---|---|---|
-| **From a run in memory** | `run.plot_iterations()` | `run.plot_history()` |
-| **From a saved run** | `plot_run_iterations(run_dir)` | `plot_run_history(run_dir)` |
+| **From the run** | `run.plot_iterations()` | `run.plot_metrics()` |
+| **From the logs** | `load_iterations(run_dir)` | `load_metrics(run_dir)` |
 
-The methods need only the run object, the functions (imported from `actgpr.plotting`) need only the directory, and each pair draws the identical figure, so which one to reach for depends solely on what you still have to hand. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) describes each in detail.
+The prefix says where the data comes from. `plot_` draws from the run object you are still holding, so it is a method on `OptimisationRun`. `load_` takes the path to a run's log directory, reads `results.h5`, and draws the same figure, so it is a function imported from `actgpr.plotting`. Each pair is the identical figure, so which one to reach for depends solely on what you still have to hand. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) describes each in detail.
 
 ## Vocabulary
 
@@ -331,7 +331,7 @@ The methods need only the run object, the functions (imported from `actgpr.plott
 | **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_iterations"`. |
 | **`new_y`** | The Objective output at the newly evaluated `next_point`. |
 | **`best_x` / `best_y`** | The input point with the lowest Objective output, and that output, which together are the final result. |
-| **`store_snapshots`** | If `True` (the default), each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. Set `False` to omit them and keep `results.h5` small. The validation metrics shown by `plot_run_history()` are recorded regardless of this flag. |
+| **`store_snapshots`** | If `True` (the default), each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. Set `False` to omit them and keep `results.h5` small. The validation metrics shown by `load_metrics()` are recorded regardless of this flag. |
 | **Deferred-write accumulator** | Per-iteration results are collected in memory during the run and written to `results.h5` once at the end. |
 
 ### Validation metrics
@@ -350,8 +350,8 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **MRR** | Minimal Reproducible Run, a pattern requiring every run to record: what was run, with what inputs, in which environment, what happened, and what came out. |
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
-| **`plot_run_history()`** | Builds the four-panel validation-metrics figure from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
-| **`plot_run_iterations()`** | Opens the per-iteration slider from a run directory's `results.h5` alone, the same figure as `run.plot_iterations()`. |
+| **`load_metrics()`** | Builds the four-panel validation-metrics figure from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
+| **`load_iterations()`** | Opens the per-iteration slider from a run directory's `results.h5` alone, the same figure as `run.plot_iterations()`. |
 
 ## Development
 

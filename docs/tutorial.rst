@@ -288,25 +288,25 @@ Revisiting a saved run
 
 Both figures can be rebuilt from a run directory alone, with no
 ``OptimisationRun`` object, so a past run can be revisited at any later
-time. ``plot_run_history`` draws the validation metrics:
+time. ``load_metrics`` draws the validation metrics:
 
 .. code-block:: python
 
    from pathlib import Path
 
-   from actgpr.plotting import plot_run_history
+   from actgpr.plotting import load_metrics
 
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
-   plot_run_history(run_dir)
+   load_metrics(run_dir)
 
-and ``plot_run_iterations`` opens the same interactive slider as
+and ``load_iterations`` opens the same interactive slider as
 ``run.plot_iterations()``:
 
 .. code-block:: python
 
-   from actgpr.plotting import plot_run_iterations
+   from actgpr.plotting import load_iterations
 
-   slider = plot_run_iterations(run_dir)
+   slider = load_iterations(run_dir)
 
 Assign the slider to a variable that outlives the call. Matplotlib keeps
 only a weak reference to it, so a slider left unassigned is garbage
@@ -314,7 +314,7 @@ collected: it is still drawn, but silently stops responding to drags.
 
 The slider needs the run to have kept snapshots (the default). It raises
 ``RuntimeError`` for a run executed with ``store_snapshots=False``, since
-the per-iteration GP arrays were never written. ``plot_run_history`` works
+the per-iteration GP arrays were never written. ``load_metrics`` works
 either way, since the validation metrics are always recorded.
 
 For a custom analysis, read the same series directly:
@@ -375,7 +375,7 @@ Shared parameters
        browse them afterward. Set ``False`` to omit them, since they are the
        bulk of ``results.h5``'s size. The
        ``prediction_error``/``improvement`` history used by
-       ``plot_run_history()`` is recorded either way.
+       ``load_metrics()`` is recorded either way.
    * - ``run_dir`` (default None)
      - If given, writes the MRR record (see Step 5) to a timestamped
        folder under this path. If ``None``, nothing is written to disk.
@@ -411,11 +411,14 @@ Shared parameters
 Plotting reference
 ------------------
 
-Two figures, each reachable two ways: from the run object you still hold,
-or from a run directory on disk. That is four entry points in total, and
-there is nothing else to learn. The two methods sit on ``OptimisationRun``;
-the two functions are imported from ``actgpr.plotting``, since the package
-itself exports only the four core classes.
+Two figures, each reachable two ways. That is four entry points in total,
+and there is nothing else to learn.
+
+The prefix says where the data comes from. ``plot_`` draws from the run
+object you are still holding, so those two are methods on
+``OptimisationRun``. ``load_`` takes the path to a run's log directory,
+reads its ``results.h5``, and draws the same figure, so those two are
+functions imported from ``actgpr.plotting``.
 
 .. list-table::
    :header-rows: 1
@@ -424,12 +427,12 @@ itself exports only the four core classes.
    * -
      - The surrogate itself
      - Validation metrics
-   * - From a run in memory
+   * - From the run
      - ``run.plot_iterations()``
-     - ``run.plot_history()``
-   * - From a saved run
-     - ``plot_run_iterations(run_dir)``
-     - ``plot_run_history(run_dir)``
+     - ``run.plot_metrics()``
+   * - From the logs
+     - ``load_iterations(run_dir)``
+     - ``load_metrics(run_dir)``
 
 The bottom row needs ``run_dir`` to have been set, since it reads
 ``results.h5``; the methods work either way. ``run.run_dir`` holds the
@@ -447,25 +450,23 @@ run you just finished, not only on one from last month.
        finished run: the GP fit on top, the EI landscape below. Watching the
        band narrow around the minimum is the clearest picture of what the
        algorithm did.
-   * - ``run.plot_history()``
+   * - ``run.plot_metrics()``
      - The whole run as one figure, four panels: ``current_best``,
        ``improvement``, ``max_ei`` (log-scaled), and ``prediction_error``
        against iteration. Use it to judge convergence at a glance.
-   * - ``plot_run_iterations(run_dir)``
-     - The slider again, for a run read back from disk. Keep the returned
+   * - ``load_iterations(run_dir)``
+     - The slider again, read back from a run's logs. Keep the returned
        ``Slider`` in a variable or matplotlib will collect it and it will
        stop responding.
-   * - ``plot_run_history(run_dir)``
-     - The four panels again, for a run read back from disk.
+   * - ``load_metrics(run_dir)``
+     - The four panels again, read back from a run's logs.
 
-That is the whole plotting API. The two methods need only the run object,
-the two functions need only the directory, and each pair draws the
-identical figure, so which one to reach for depends solely on what you
-still have to hand.
+Each pair draws the identical figure, so which one to reach for depends
+solely on what you still have to hand.
 
-Both functions take ``show=False`` to defer ``plt.show()``, and both routes
-take ``log_scale=False``: on the slider it makes the EI panel linear, on
-the history figure it makes the ``max_ei`` panel linear. Log is the default
+Both ``load_`` functions take ``show=False`` to defer ``plt.show()``, and
+all four take ``log_scale=False``: on the slider it makes the EI panel
+linear, on the metrics figure it makes the ``max_ei`` panel linear. Log is the default
 because EI falls by orders of magnitude as a run converges, so on a linear
 axis it sits flat against zero and its decay towards ``ei_threshold`` is
 invisible. The other three metrics stay linear either way, since

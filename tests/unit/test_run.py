@@ -229,7 +229,7 @@ class TestRunDirectory:
 
 
 class TestPlotHistory:
-    """Tests for OptimisationRun.plot_history."""
+    """Tests for OptimisationRun.plot_metrics."""
 
     def test_raises_before_the_run(self) -> None:
         """Test that plotting a history that does not exist yet is an error."""
@@ -244,7 +244,7 @@ class TestPlotHistory:
         )
 
         with pytest.raises(RuntimeError, match="No history available"):
-            run.plot_history(show=False)
+            run.plot_metrics(show=False)
 
     def test_works_without_a_run_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that a run writing no MRR record can still plot its metrics.
@@ -270,7 +270,7 @@ class TestPlotHistory:
         result = run.run()
 
         assert run.run_dir is None
-        fig, axes = run.plot_history(show=False)
+        fig, axes = run.plot_metrics(show=False)
         title = fig._suptitle.get_text()
 
         assert axes.shape == (2, 2)
@@ -280,10 +280,10 @@ class TestPlotHistory:
     def test_matches_the_plot_read_back_from_disk(self, tmp_path: Path) -> None:
         """Test that the in-memory and on-disk histories draw the same figure.
 
-        Both delegate to plotting._draw_run_history, so this guards the
+        Both delegate to plotting._draw_metrics, so this guards the
         single definition of the figure against the two callers drifting.
         """
-        from actgpr.plotting import plot_run_history
+        from actgpr.plotting import load_metrics
 
         torch.manual_seed(SEED)
         run = OptimisationRun.with_training(
@@ -299,8 +299,8 @@ class TestPlotHistory:
         )
         run.run()
 
-        memory_fig, memory_axes = run.plot_history(show=False)
-        disk_fig, disk_axes = plot_run_history(run.run_dir, show=False)
+        memory_fig, memory_axes = run.plot_metrics(show=False)
+        disk_fig, disk_axes = load_metrics(run.run_dir, show=False)
 
         assert memory_fig._suptitle.get_text() == disk_fig._suptitle.get_text()
         for from_memory, from_disk in zip(memory_axes.flatten(), disk_axes.flatten()):
@@ -323,7 +323,7 @@ class TestPlotHistory:
         )
         run.run()
 
-        _, axes = run.plot_history(show=False, log_scale=False)
+        _, axes = run.plot_metrics(show=False, log_scale=False)
 
         assert all(ax.get_yscale() == "linear" for ax in axes.flatten())
 

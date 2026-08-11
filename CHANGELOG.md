@@ -9,18 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The plotting API is now four entry points and nothing else:
-  `OptimisationRun.plot_iterations()` and `OptimisationRun.plot_history()`
-  for a run still in memory, `plotting.plot_run_iterations(run_dir)` and
-  `plotting.plot_run_history(run_dir)` for one on disk. Two figures, each
-  reachable two ways. `plot_gp`, `plot_acquisition`,
+- The plotting API is now four entry points and nothing else, named so the
+  prefix says where the data comes from. `plot_` draws from the run object
+  you are holding: `OptimisationRun.plot_iterations()` and
+  `OptimisationRun.plot_metrics()`. `load_` takes the path to a run's log
+  directory and draws the same figure from its `results.h5`:
+  `plotting.load_iterations(run_dir)` and `plotting.load_metrics(run_dir)`.
+  Two figures, each reachable two ways. This renames
+  `plot_run_iterations` to `load_iterations`, `plot_run_history` to
+  `load_metrics`, and `OptimisationRun.plot_history()` to `plot_metrics()`:
+  the old names said neither what they drew nor where they read it from,
+  and `plot_iterations` sitting next to `plot_run_iterations` gave no hint
+  that one was in-memory and the other on-disk. `plot_gp`, `plot_acquisition`,
   `plot_iteration_snapshot` and `load_iteration_snapshots` are the helpers
   those four are built from and are now private (`_`-prefixed): they were
   public only because they existed, and a user choosing between eight
   plotting functions has to understand the internals to pick one.
   `plot_surrogate` is removed outright, being a three-line wrapper around
   `plot_gp` that nothing in the package called
-- `plot_run_history()` and `plot_history()` now draw one panel per metric
+- `load_metrics()` and `plot_metrics()` now draw one panel per metric
   in a 2x2 grid (`current_best`, `improvement`, `max_ei` on a log axis,
   `prediction_error`) instead of overlaying `prediction_error` and
   `improvement` on one axes with `max_ei` on a log twin axis. The four
@@ -40,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to. `run_dir` passed in is only a base path, and the resolved directory
   was previously a local variable, so a caller could not locate its own MRR
   record without globbing `results/`. This also makes
-  `plot_run_history(run.run_dir)` work on a run you just finished, which
+  `load_metrics(run.run_dir)` work on a run you just finished, which
   had no equivalent before
 
 - `store_snapshots` now defaults to `True`. Browsing a run with
@@ -62,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `plotting.plot_run_iterations(run_dir)` opens the interactive
+- `plotting.load_iterations(run_dir)` opens the interactive
   per-iteration slider for a run read back from disk, the counterpart to
   `OptimisationRun.plot_iterations()`. Browsing a saved run previously
   meant rebuilding the slider by hand from `load_iteration_snapshots` and
@@ -71,9 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reach. Both routes now delegate to the same private helper, so the
   figure has a single definition
 
-- `OptimisationRun.plot_history()` plots a run's validation metrics from
+- `OptimisationRun.plot_metrics()` plots a run's validation metrics from
   the object you still hold, the in-memory counterpart to
-  `plot_run_history()`. The series were previously reachable only by
+  `load_metrics()`. The series were previously reachable only by
   reading `results.h5`, so a run without `run_dir` had no route to them at
   all. Both delegate to one private helper, so the figure has a single
   definition
@@ -138,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `meta.json` now records `package_name` and `repository`, fetched from
   installed package metadata, so a run's provenance file identifies the
   software that produced it even if shared on its own
-- `plotting.plot_run_history(run_dir)` builds the `prediction_error` /
+- `plotting.load_metrics(run_dir)` builds the `prediction_error` /
   `improvement` vs. iteration plot directly from a saved run's `results.h5`
   with no `OptimisationRun` object needed
 - `run.log` now ends with a summary line giving `best_x`/`best_y`/
@@ -153,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clarified in `run.py` docstrings and the README that `store_snapshots`
   only gates the per-iteration GP/EI arrays used by `plot_iterations()`;
-  the `prediction_error`/`improvement` history used by `plot_run_history()`
+  the `prediction_error`/`improvement` history used by `load_metrics()`
   is always recorded, regardless of this flag
 - Renamed `max_evaluations` to `max_iterations` everywhere: the constructor
   parameter, the `config.json`/`results.h5` keys, the `stop_reason` value,

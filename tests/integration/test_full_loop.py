@@ -22,7 +22,7 @@ SEED = 25
 
 MRR_ARTIFACTS = ("config.json", "manifest.json", "meta.json", "run.log", "results.h5")
 
-HISTORY_FIELDS = (
+METRIC_FIELDS = (
     "iteration",
     "next_point",
     "new_y",
@@ -145,7 +145,7 @@ class TestMrrArtifacts:
             history = f["history"]
             n_recorded = len(history["iteration"])
 
-            for field in HISTORY_FIELDS:
+            for field in METRIC_FIELDS:
                 assert len(history[field]) == n_recorded
 
             # improvement Δᵢ = gain of this iteration's own new_y over
