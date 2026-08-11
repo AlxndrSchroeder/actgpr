@@ -171,6 +171,106 @@ class TestOptimisationRunInit:
         )
 
 
+class TestRunDirectory:
+    """Tests for locating a run's own MRR record afterwards."""
+
+    def test_run_dir_is_none_before_running(self, tmp_path: Path) -> None:
+        """Test that no directory is claimed until the run starts."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            run_dir=tmp_path,
+        )
+
+        assert run.run_dir is None
+
+    def test_run_dir_exposes_the_written_directory(self, tmp_path: Path) -> None:
+        """Test that the caller can find its own MRR record after a run.
+
+        run_dir passed in is only a base path; the run writes to a
+        timestamped folder beneath it. Without this the caller would have to
+        glob results/ and guess which directory was theirs.
+        """
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        (written,) = list(tmp_path.iterdir())
+        assert run.run_dir == written
+        assert (run.run_dir / "results.h5").exists()
+
+    def test_run_dir_stays_none_without_a_run_dir(self) -> None:
+        """Test that a run writing nothing reports no directory."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        run.run()
+
+        assert run.run_dir is None
+
+
+class TestCustomObjective:
+    """Tests that an Objective need not be an ObjectiveFn."""
+
+    def test_a_plain_class_with_evaluate_is_accepted(self, tmp_path: Path) -> None:
+        """Test the documented promise: any object with evaluate() works.
+
+        The README and tutorial tell users to wrap a simulation in a class
+        of their own rather than in ObjectiveFn, so a class that inherits
+        nothing and registers nowhere has to drive a full run.
+        """
+
+        class MySimulation:
+            """A user's own Objective, unrelated to ObjectiveFn."""
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def evaluate(self, *x: float) -> tuple[float, ...]:
+                self.calls += len(x)
+                return tuple((v - 1.0) ** 2 for v in x)
+
+        simulation = MySimulation()
+        run = OptimisationRun.without_training(
+            objective=simulation,
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 5.0),
+            initial_train_x=[-3.0, 5.0],
+            max_iterations=6,
+            ei_threshold=1e-9,
+            n_candidates=60,
+            run_dir=tmp_path,
+        )
+        result = run.run()
+
+        assert not isinstance(simulation, ObjectiveFn)
+        assert simulation.calls > 2  # the loop kept calling it
+        assert abs(result["best_x"] - 1.0) < 0.5  # and it actually optimised
+
+        # It also lands in the MRR record, via repr() like any Objective.
+        config = json.loads((run.run_dir / "config.json").read_text())
+        assert "MySimulation" in config["objective"]
+
+
 class TestOptimisationRunRun:
     """Tests for OptimisationRun.run()."""
 
