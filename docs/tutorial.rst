@@ -523,11 +523,11 @@ run you just finished, not only on one from last month.
 Each pair draws the identical figure, so which one to reach for depends
 solely on what you still have to hand.
 
-All four take ``show=False``. Use it whenever you open more than one
-figure: ``plt.show()`` displays *every* open figure, not just the newest,
-so calling it once per figure re-displays the earlier ones, and the first
-window flickers back into view as the last one is closed. Build the figures
-first, then call ``plt.show()`` yourself:
+All four open their window by calling ``plt.show()`` for you. That is fine
+for a single figure, but ``plt.show()`` opens *every* figure that exists,
+not just the one you last built, so two calls in a row open the first
+window a second time. Pass ``show=False`` to build a figure without opening
+it, then call ``plt.show()`` once at the end to open everything together:
 
 .. code-block:: python
 
@@ -538,13 +538,41 @@ first, then call ``plt.show()`` yourself:
 
    plt.show()   # once, for both
 
+Both windows are titled (``actgpr: iterations (GP fit and EI)`` and
+``actgpr: validation metrics``), since matplotlib opens them at the same
+position and one lands on top of the other.
+
 All four also take ``log_scale=False``: on the slider it makes the EI panel
-linear, on the metrics figure it makes the ``max_ei`` panel linear. Log is the default
-because EI falls by orders of magnitude as a run converges, so on a linear
-axis it sits flat against zero and its decay towards ``ei_threshold`` is
-invisible. The other three metrics stay linear either way, since
-``prediction_error`` is signed and ``improvement`` is frequently exactly
-zero, neither of which a log axis can display.
+linear, on the metrics figure it makes the ``max_ei`` panel linear.
+
+Log is the default because EI falls by orders of magnitude as a run
+converges, so on a linear axis it sits flat against zero and its decay
+towards ``ei_threshold`` is invisible. The other three metrics stay linear
+either way, since ``prediction_error`` is signed and ``improvement`` is
+frequently exactly zero, neither of which a log axis can display.
+
+What each raises
+~~~~~~~~~~~~~~~~~
+
+The iteration figure needs the per-iteration snapshots; the metrics figure
+needs only the scalar series, which are always recorded. So the two fail in
+different situations, each with a message naming the actual cause:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Situation
+     - What you get
+   * - ``run_dir`` holds no ``results.h5``
+     - ``FileNotFoundError``, from either ``load_`` function
+   * - The run used ``store_snapshots=False``
+     - ``RuntimeError`` from ``load_iterations``/``plot_iterations``,
+       telling you to re-run with ``store_snapshots=True``.
+       ``load_metrics``/``plot_metrics`` work normally
+   * - ``run()`` has not been called yet
+     - ``RuntimeError`` from either method, telling you to call ``run()``
+       first
 
 Where to go next
 ----------------

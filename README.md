@@ -107,6 +107,8 @@ The exact configuration behind it:
 ```python
 import math
 
+import matplotlib.pyplot as plt
+
 from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
 
 objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
@@ -124,7 +126,11 @@ run = OptimisationRun.without_training(
     noise=2e-4,
 )
 run.run()
-run.plot_iterations()
+
+run.plot_iterations(show=False)   # the animation above
+run.plot_metrics(show=False)      # the four panels below
+
+plt.show()   # opens both windows at once
 ```
 
 It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
@@ -132,7 +138,7 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
 
-`run.plot_metrics()` summarises the same run as four metrics against iteration, one panel each:
+The second call summarises the same run as four metrics against iteration, one panel each:
 
 <img src="assets/plot_metrics_demo.png" width="700" alt="current_best, improvement, max_ei and prediction_error against iteration for the same run">
 
@@ -275,7 +281,7 @@ load_metrics(run_dir, show=False)
 plt.show()  # once, for both
 ```
 
-All four take `show=False`. Use it whenever you open more than one figure: `plt.show()` displays *every* open figure, not just the newest, so calling it once per figure re-displays the earlier ones and the first window flickers back as the last one closes. Build the figures, then call `plt.show()` yourself.
+All four open their window by calling `plt.show()` for you. That is fine for one figure, but `plt.show()` opens *every* figure that exists, not just the one you last built, so two calls in a row open the first window twice. Pass `show=False` to build a figure without opening it, then call `plt.show()` once at the end to open everything together.
 
 `load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) walks through both figures panel by panel.
 
