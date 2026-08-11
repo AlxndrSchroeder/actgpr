@@ -49,7 +49,7 @@ pip install -e . --no-deps          # the package itself; deps come from the loc
 
 The usage pattern:
 
-1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation, write your own class with an `evaluate()` method instead. `actgpr` never checks the type, only that the method exists.
+1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. There are two routes, described under [Writing your Objective](#writing-your-objective) below.
 2. **Configure the run.** Beyond the Objective and Surrogate you set `search_bounds` (the closed interval `[lo, hi]` in which the minimum is searched), `initial_train_x` (the points that seed the loop), `max_iterations` (budget cap), `ei_threshold` (early stopping threshold), `noise` (observation noise variance), and optionally `run_dir` (where to write the MRR record). See the parameter tables in the [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) for the full list.
 3. **Execute** with `run()`, which returns `best_x` and `best_y` along with the full training data.
 4. **Inspect** the run with `plot_iterations()`.
@@ -131,6 +131,43 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 `best_y = -0.9413`. Fixed hyperparameters (`without_training`) are why the
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
+
+`plot_run_history(run.run_dir)` summarises the same run as three series against iteration:
+
+<img src="assets/run_history_demo.png" width="620" alt="prediction_error, improvement and max_ei against iteration for the same run">
+
+- **`max_ei`** (green, right-hand log axis) is the convergence signal. It falls by three orders of magnitude and the run stops when it crosses `ei_threshold`. A run that has not converged shows this line still comfortably above the threshold.
+- **`prediction_error`** (blue) is `predicted_y - new_y`: how wrong the surrogate was about the point it just chose. It is large and swings either side of zero early on, then settles towards zero as the surrogate learns the objective. It stays linear and signed, which is why it cannot share the log axis.
+- **`improvement`** (orange) is how much each evaluation lowered the best value found. Spikes early, then flat at zero once the optimiser is refining rather than discovering. A flat `improvement` with `max_ei` still high means the search is exploring, not finished.
+
+### Writing your Objective
+
+`actgpr` never inspects the type of your Objective. It only ever calls `.evaluate(...)`, so the interface is a single method and there is no base class to inherit and nothing to register. This is deliberate: it is what lets you plug in a simulation of your own without adapting it to `actgpr`. The interface is declared as a `typing.Protocol` (`actgpr.objective_fn.Objective`), so type checkers accept your class too.
+
+**Route A: a plain function.** Wrap it in `ObjectiveFn`, as in the example above:
+
+```python
+objective = ObjectiveFn(lambda x: (x - 1) ** 2)
+```
+
+**Route B: your own simulation.** Write your own class exposing `evaluate()`. Do *not* wrap it in `ObjectiveFn`. Use this whenever there is setup, configuration, or state involved:
+
+```python
+class MySimulation:
+    def __init__(self, config):
+        self.config = config          # solver settings, mesh, fixed parameters
+
+    def evaluate(self, *x: float) -> tuple[float, ...]:
+        return tuple(self._solve(v) for v in x)
+
+    def _solve(self, x: float) -> float:
+        ...                           # run your simulation at x, return its output
+
+
+run = OptimisationRun.with_training(objective=MySimulation(config), ...)
+```
+
+`OptimisationRun` treats both identically. `config.json` records whichever you used via its `repr()`, so the MRR record still identifies the Objective.
 
 **Simulating a noisy experiment:** a real instrument's readings are noisy, an analytic function is not. Pass `jitter` to add Gaussian noise to each evaluation, and set the surrogate's `noise` to match (`jitter` is a standard deviation, `noise` a variance):
 

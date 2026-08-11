@@ -434,6 +434,28 @@ Plotting reference
 ``actgpr.plotting`` and is imported from there, since the package itself
 exports only the four core classes.
 
+Two kinds of plot, each reachable both during a session and from a saved
+run. ``run.run_dir`` holds the timestamped directory the run wrote to, so
+the disk-based functions work on a run you just finished as well as on one
+from last month:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * -
+     - The surrogate itself
+     - Validation metrics
+   * - From a run in memory
+     - ``run.plot_iterations()``
+     - ``plot_run_history(run.run_dir)``
+   * - From a saved run
+     - ``load_snapshots(run_dir)`` then ``plot_iteration_snapshot``
+     - ``plot_run_history(run_dir)``
+
+Both disk-based routes need ``run_dir`` to have been set, since they read
+``results.h5``.
+
 .. list-table::
    :header-rows: 1
    :widths: 38 62

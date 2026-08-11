@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Objective interface is now declared as a `typing.Protocol`
+  (`actgpr.objective_fn.Objective`) and `OptimisationRun` is typed against
+  it. The docs always said any object with `evaluate()` works and the
+  runtime never checked the type, but the signatures declared
+  `objective: ObjectiveFn`, so a type checker rejected a user's own
+  simulation class. The duck typing is now expressed in the code
+- `OptimisationRun.run_dir` exposes the timestamped directory a run wrote
+  to. `run_dir` passed in is only a base path, and the resolved directory
+  was previously a local variable, so a caller could not locate its own MRR
+  record without globbing `results/`. This also makes
+  `plot_run_history(run.run_dir)` work on a run you just finished, which
+  had no equivalent before
+
 - `store_snapshots` now defaults to `True`. Browsing a run with
   `plot_iterations()` previously required setting the flag before the run
   started, so anyone who had not anticipated it got a `RuntimeError` and had
