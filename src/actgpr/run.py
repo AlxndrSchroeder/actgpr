@@ -11,13 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
+from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
-from actgpr.objective_fn import ObjectiveFn
-from actgpr.plotting import EI_LOG_FLOOR_MARGIN, plot_iteration_snapshot
+from actgpr.objective_fn import Objective
+from actgpr.plotting import METRIC_FIELDS, _draw_iteration_slider, _draw_metrics
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -45,13 +47,15 @@ class OptimisationRun:
         Execute the optimisation loop and return the results.
     plot_iterations()
         Open an interactive matplotlib slider to browse GP snapshots per iteration.
+    plot_metrics()
+        Plot this run's validation metrics against iteration.
     """
 
     # TODO: add from_config() classmethod to construct from config.json
 
     def __init__(
         self,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -74,8 +78,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -99,7 +106,7 @@ class OptimisationRun:
             predictions and EI scores for later interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Raises
@@ -169,10 +176,18 @@ class OptimisationRun:
         # in _run_loop(), only when store_snapshots is True.
         self._convergence_snapshot: dict | None = None
 
+        # The convergence criterion that ended the run, for plot_metrics.
+        self._stop_reason: str = "not run"
+
+        # The timestamped directory run() actually wrote to, set once the
+        # run starts. run_dir above is only the base path, so without this
+        # the caller cannot find its own MRR record afterwards.
+        self.run_dir: Path | None = None
+
     @classmethod
     def with_training(
         cls,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -191,8 +206,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -216,7 +234,7 @@ class OptimisationRun:
             If True, also stores GP snapshots for interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Returns
@@ -242,7 +260,7 @@ class OptimisationRun:
     @classmethod
     def without_training(
         cls,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -262,8 +280,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -287,7 +308,7 @@ class OptimisationRun:
             If True, also stores GP snapshots for interactive plotting via
             plot_iterations(), by default True. Pass False to skip them (they
             are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.plot_run_history() is
+            improvement history used by plotting.load_metrics() is
             recorded either way, regardless of this flag.
 
         Returns
@@ -476,6 +497,7 @@ class OptimisationRun:
                     self._outputscale if not self._train_hyperparameters else None
                 ),
             )
+            self.run_dir = actual_run_dir
             mrr.write_config(actual_run_dir, self._config_dict())
             mrr.write_manifest(actual_run_dir)
             file_handler = mrr.setup_file_logger(actual_run_dir)
@@ -492,6 +514,7 @@ class OptimisationRun:
             )
 
             stop_reason, n_iterations = self._run_loop(logger)
+            self._stop_reason = stop_reason
 
             best_idx = torch.argmin(self.train_y)
             best_x = self.train_x[best_idx].item()
@@ -678,11 +701,65 @@ class OptimisationRun:
 
         return stop_reason, n_iterations
 
-    def plot_iterations(self, log_scale: bool = True) -> None:
+    def plot_metrics(
+        self,
+        show: bool = True,
+        log_scale: bool = True,
+    ) -> tuple[Figure, np.ndarray]:
+        """Plot this run's validation metrics against iteration.
+
+        The from-the-run counterpart to ``plotting.load_metrics``, which
+        reads the same series back from a saved ``results.h5``. Both draw
+        the identical figure, one panel per metric. Use this one while the
+        run object is still to hand, including for a run that wrote no MRR
+        record and therefore has no directory to read back.
+
+        Parameters
+        ----------
+        show : bool, optional
+            Whether to call plt.show() immediately, by default True.
+        log_scale : bool, optional
+            If True (the default), the ``max_ei`` panel is log-scaled.
+
+        Returns
+        -------
+        tuple[Figure, numpy.ndarray]
+            The figure and its 2x2 array of axes, one panel per metric.
+
+        Raises
+        ------
+        RuntimeError
+            If the run has not been executed yet, so there is no history.
+        """
+        if not self._results:
+            raise RuntimeError(
+                "No history available. Call run() before plot_metrics()."
+            )
+
+        best_index = torch.argmin(self.train_y)
+
+        return _draw_metrics(
+            iteration=[record["iteration"] for record in self._results],
+            series={
+                field: [record[field] for record in self._results]
+                for field in METRIC_FIELDS
+            },
+            best_x=self.train_x[best_index].item(),
+            best_y=self.train_y[best_index].item(),
+            stop_reason=self._stop_reason,
+            fitted_hyperparameters=self._fitted_hyperparameters(),
+            show=show,
+            log_scale=log_scale,
+        )
+
+    def plot_iterations(self, show: bool = True, log_scale: bool = True) -> None:
         """Open an interactive matplotlib figure to browse iterations.
 
         Creates a figure with two subplots (GP predictions on top,
         EI landscape on bottom) and a slider to scrub through iterations.
+
+        The from-the-run counterpart to ``plotting.load_iterations``, which
+        opens the identical figure for a run read back from its logs.
 
         The Slider is kept alive via ``self._active_slider`` for as long as
         the OptimisationRun exists. Matplotlib does not keep its own strong
@@ -694,6 +771,12 @@ class OptimisationRun:
 
         Parameters
         ----------
+        show : bool, optional
+            Whether to call plt.show() immediately, by default True. Pass
+            False when opening this alongside another figure: plt.show()
+            displays *every* open figure, so calling it once per figure
+            re-displays the earlier ones. Build both, then call plt.show()
+            once yourself.
         log_scale : bool, optional
             If True, draws the EI subplot's y-axis on a log scale, with the
             ei_threshold convergence criterion marked as a reference line.
@@ -717,68 +800,17 @@ class OptimisationRun:
         snapshots = [r for r in self._results if "candidates" in r]
         if self._convergence_snapshot is not None:
             snapshots = snapshots + [self._convergence_snapshot]
-        if not snapshots:
-            raise RuntimeError(
-                "No snapshots available. Set store_snapshots=True before calling run()."
-            )
 
-        # Fixed EI y-axis range shared across all iterations. Otherwise each
-        # redraw autoscales to its own EI scores, hiding the shrinking max EI
-        # that signals convergence.
-        max_ei_overall = max(r["ei_scores"].max().item() for r in snapshots)
-        if log_scale:
-            # Floor one order of magnitude below ei_threshold, so the
-            # threshold line sits inside the plot rather than at its edge.
-            ei_ylim = (self.ei_threshold * EI_LOG_FLOOR_MARGIN, max_ei_overall * 2)
-            ei_threshold = self.ei_threshold
-        else:
-            # 5% headroom keeps the peak off the frame.
-            ei_ylim = (0.0, max_ei_overall * 1.05)
-            ei_threshold = None
-
-        fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
-        plt.subplots_adjust(bottom=0.18, hspace=0.35)
-
-        # Draw initial state
-        plot_iteration_snapshot(
-            snapshots[0],
-            (gp_ax, ei_ax),
-            ei_ylim=ei_ylim,
-            ei_log_scale=log_scale,
-            ei_threshold=ei_threshold,
+        # Always drawn with show=False so the slider is stored before any
+        # window opens: with a blocking backend plt.show() does not return
+        # until it is closed, and the reference must already be held by then.
+        slider = _draw_iteration_slider(
+            snapshots, self.ei_threshold, log_scale=log_scale, show=False
         )
-
-        # Slider axis sits below both subplots
-        slider_ax = fig.add_axes([0.15, 0.04, 0.7, 0.04])
-        slider = Slider(
-            slider_ax,
-            "Iteration",
-            valmin=1,
-            valmax=len(snapshots),
-            valinit=1,
-            valstep=1,
-        )
-
-        def _update(val: float) -> None:
-            """Redraw both subplots for the selected iteration."""
-            idx = int(val) - 1
-            gp_ax.cla()
-            ei_ax.cla()
-            plot_iteration_snapshot(
-                snapshots[idx],
-                (gp_ax, ei_ax),
-                ei_ylim=ei_ylim,
-                ei_log_scale=log_scale,
-                ei_threshold=ei_threshold,
-            )
-            fig.canvas.draw_idle()
-
-        slider.on_changed(_update)
-
-        # Keep the slider alive beyond this method's local scope.
         self._active_slider = slider
 
-        plt.show()
+        if show:
+            plt.show()
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the OptimisationRun."""

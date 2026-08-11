@@ -1,30 +1,36 @@
 """Plotting utilities for active GPR optimisation.
 
+Two figures, each reachable two ways. The ``plot_`` prefix draws from a run
+object you still hold and lives on ``OptimisationRun``; the ``load_``
+prefix reads a run back from its log directory and lives here:
+
+- the surrogate itself: ``run.plot_iterations()`` / ``load_iterations(dir)``
+- validation metrics: ``run.plot_metrics()`` / ``load_metrics(dir)``
+
+Each pair draws the identical figure, so which one to reach for depends
+solely on what you still have to hand. Everything else in this module is a
+private helper that these four are built from.
+
 Functions
 ---------
-plot_gp
-    Core plotting function: draws GP mean, 95% CI, and training data from raw tensors.
-plot_surrogate
-    Convenience wrapper: extracts tensors from a fitted surrogate, then calls plot_gp.
-plot_acquisition
-    Plots the Expected Improvement acquisition landscape.
-plot_iteration_snapshot
-    Draws one iteration's GP + EI side by side from a snapshot dict.
-plot_run_history
-    Plots validation metrics vs. iteration from a saved run's results.h5.
-load_snapshots
-    Rebuilds a saved run's per-iteration snapshots from its results.h5.
+load_iterations
+    Reads a run directory and browses its iterations with an interactive
+    slider over the GP fit and the EI landscape, one frame per iteration.
+load_metrics
+    Reads a run directory and plots its validation metrics against
+    iteration, one panel per metric.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import h5py
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-
-from actgpr.surrogate import GPyTorchSurrogate
+from matplotlib.widgets import Slider
 
 # Half-width of the shaded confidence band in standard deviations;
 # ±2σ covers ≈95% of a Gaussian posterior.
@@ -38,11 +44,24 @@ EI_LOG_FLOOR_MARGIN = 0.1
 EI_LOG_FLOOR_DEFAULT = 1e-8
 
 # Surrogate hyperparameters reported in plot titles, when available. Named
-# once so the snapshot and run-history plots stay in step.
+# once so the iteration and metric figures stay in step.
 HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
 
 
-def plot_gp(
+def _name_window(fig: Figure, title: str) -> None:
+    """Title a figure's window so several open at once stay tellable apart.
+
+    Matplotlib names windows "Figure 1", "Figure 2", and opens them all at
+    the same default position, so the two actgpr figures land on top of one
+    another and neither the title bar nor the window switcher says which is
+    which.
+    """
+    manager = fig.canvas.manager
+    if manager is not None:
+        manager.set_window_title(title)
+
+
+def _plot_gp(
     candidates: torch.Tensor,
     f_mean: torch.Tensor,
     f_var: torch.Tensor,
@@ -131,62 +150,7 @@ def plot_gp(
     return fig, ax
 
 
-def plot_surrogate(
-    surrogate: GPyTorchSurrogate,
-    test_x: torch.Tensor,
-    ax: Axes | None = None,
-    show: bool = True,
-) -> tuple[Figure, Axes]:
-    """Plot surrogate predictions against training data.
-
-    Convenience wrapper that extracts prediction tensors from a fitted
-    surrogate model and delegates to plot_gp.
-
-    Parameters
-    ----------
-    surrogate : GPyTorchSurrogate
-        A fitted surrogate model.
-    test_x : torch.Tensor of shape (m,)
-        The test input points used to compute predictions for plotting.
-    ax : matplotlib.axes.Axes or None, optional
-        An existing axes to draw on. If None, a new figure and axes are created.
-    show : bool, optional
-        Whether to call plt.show() immediately, by default True.
-        Set to False when composing multiple plots.
-
-    Returns
-    -------
-    tuple[Figure, Axes]
-        The figure and axes used for the plot.
-
-    Raises
-    ------
-    RuntimeError
-        If the surrogate has not been fitted or has no training data.
-    """
-    if (
-        surrogate.model is None
-        or surrogate.likelihood is None
-        or surrogate.train_x is None
-        or surrogate.train_y is None
-    ):
-        raise RuntimeError("The surrogate must be fitted before plotting.")
-
-    preds = surrogate.predict(test_x)
-
-    return plot_gp(
-        candidates=test_x,
-        f_mean=preds["f_mean"],
-        f_var=preds["f_var"],
-        train_x=surrogate.train_x,
-        train_y=surrogate.train_y,
-        next_point=None,
-        ax=ax,
-        show=show,
-    )
-
-
-def plot_acquisition(
+def _plot_acquisition(
     candidates: torch.Tensor,
     ei_scores: torch.Tensor,
     next_point: float | None = None,
@@ -311,7 +275,7 @@ def plot_acquisition(
     return fig, ax
 
 
-def plot_iteration_snapshot(
+def _plot_iteration_snapshot(
     snapshot: dict,
     axes: tuple[Axes, Axes],
     ei_ylim: tuple[float, float] | None = None,
@@ -336,15 +300,15 @@ def plot_iteration_snapshot(
         to this iteration's own scores.
     ei_log_scale : bool, optional
         If True, draws the EI subplot's y-axis on a log scale. See
-        plot_acquisition for why this matters as EI shrinks during a run,
+        _plot_acquisition for why this matters as EI shrinks during a run,
         by default False.
     ei_threshold : float or None, optional
         The run's convergence threshold, drawn as a horizontal reference
-        line on the EI subplot. See plot_acquisition.
+        line on the EI subplot. See _plot_acquisition.
     """
     gp_ax, ei_ax = axes
 
-    plot_gp(
+    _plot_gp(
         candidates=snapshot["candidates"],
         f_mean=snapshot["f_mean"],
         f_var=snapshot["f_var"],
@@ -389,7 +353,7 @@ def plot_iteration_snapshot(
 
     gp_ax.set_title(title)
 
-    plot_acquisition(
+    _plot_acquisition(
         candidates=snapshot["candidates"],
         ei_scores=snapshot["ei_scores"],
         next_point=snapshot["next_point"],
@@ -402,15 +366,17 @@ def plot_iteration_snapshot(
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
 
 
-def load_snapshots(run_dir: Path | str) -> list[dict]:
+def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
     """Rebuild a saved run's per-iteration snapshots from its results.h5.
 
-    The per-iteration counterpart to ``plot_run_history``: it returns the
+    The per-iteration counterpart to ``load_metrics``: it returns the
     same snapshot dictionaries ``OptimisationRun`` holds in memory, so a
-    finished run's iterations can be replotted with
-    ``plot_iteration_snapshot`` without an OptimisationRun object. Without
-    this, anything replotting a saved run has to reassemble the snapshots
-    field by field and silently loses whichever fields it forgets.
+    finished run's iterations can be replotted without an OptimisationRun
+    object. Pass the whole list to ``_draw_iteration_slider`` for the
+    interactive slider, or one entry to ``_plot_iteration_snapshot`` to draw
+    a single frame onto your own axes. Without this, anything replotting a
+    saved run has to reassemble the snapshots field by field and silently
+    loses whichever fields it forgets.
 
     The fit that triggered ``ei_threshold`` convergence is appended as the
     final snapshot when the run recorded one. It carries no
@@ -496,44 +462,268 @@ def load_snapshots(run_dir: Path | str) -> list[dict]:
     return snapshots
 
 
-def plot_run_history(
+def _draw_iteration_slider(
+    snapshots: list[dict],
+    ei_threshold: float,
+    log_scale: bool = True,
+    show: bool = True,
+) -> Slider:
+    """Browse a list of snapshots with the interactive iteration slider.
+
+    The plural counterpart to ``_plot_iteration_snapshot``, which draws a
+    single frame onto axes you supply: this one owns the figure and adds
+    the slider that scrubs through every frame. Pairs with
+    ``_load_iteration_snapshots``, so a saved run can be browsed in two
+    calls without an OptimisationRun object.
+
+    This is the single definition of the slider figure. Both
+    ``OptimisationRun.plot_iterations`` (passing the snapshots it holds in
+    memory) and ``load_iterations`` (loading them from a saved
+    ``results.h5``) delegate here, so the two cannot drift apart.
+
+    Parameters
+    ----------
+    snapshots : list[dict]
+        Per-iteration snapshots, as held by OptimisationRun or returned by
+        ``_load_iteration_snapshots``.
+    ei_threshold : float
+        The run's convergence threshold, used to place the EI axis floor
+        and draw the reference line.
+    log_scale : bool, optional
+        If True (the default), the EI axis is log-scaled.
+    show : bool, optional
+        If True (the default), calls ``plt.show()``. Pass False to keep the
+        figure open for further composition, or to store the returned
+        Slider somewhere durable before the window appears.
+
+    Returns
+    -------
+    matplotlib.widgets.Slider
+        The slider. **Keep a reference to it**: matplotlib holds only a weak
+        one, so a slider that goes out of scope is garbage collected and
+        silently stops responding to drags while still being drawn.
+
+    Raises
+    ------
+    RuntimeError
+        If snapshots is empty.
+    """
+    if not snapshots:
+        raise RuntimeError(
+            "No snapshots available. Set store_snapshots=True before calling run()."
+        )
+
+    # One fixed EI range across every frame, so the shrinking EI maximum
+    # stays visible instead of each frame autoscaling to its own scores.
+    max_ei_overall = max(s["ei_scores"].max().item() for s in snapshots)
+    if log_scale:
+        ei_ylim = (ei_threshold * EI_LOG_FLOOR_MARGIN, max_ei_overall * 2)
+        threshold_line = ei_threshold
+    else:
+        ei_ylim = (0.0, max_ei_overall * 1.05)
+        threshold_line = None
+
+    fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
+    _name_window(fig, "actgpr: iterations (GP fit and EI)")
+    plt.subplots_adjust(bottom=0.18, hspace=0.35)
+
+    def _draw(index: int) -> None:
+        """Render one frame onto the shared axes."""
+        gp_ax.cla()
+        ei_ax.cla()
+        _plot_iteration_snapshot(
+            snapshots[index],
+            (gp_ax, ei_ax),
+            ei_ylim=ei_ylim,
+            ei_log_scale=log_scale,
+            ei_threshold=threshold_line,
+        )
+
+    _draw(0)
+
+    slider_ax = fig.add_axes([0.15, 0.04, 0.7, 0.04])
+    slider = Slider(
+        slider_ax,
+        "Iteration",
+        valmin=1,
+        valmax=len(snapshots),
+        valinit=1,
+        valstep=1,
+    )
+
+    def _update(value: float) -> None:
+        """Redraw both subplots for the selected iteration."""
+        _draw(int(value) - 1)
+        fig.canvas.draw_idle()
+
+    slider.on_changed(_update)
+
+    if show:
+        plt.show()
+
+    return slider
+
+
+def load_iterations(
     run_dir: Path | str,
-    ax: Axes | None = None,
+    log_scale: bool = True,
+    show: bool = True,
+) -> Slider:
+    """Browse a saved run's iterations with the same slider as a live run.
+
+    The from-the-logs counterpart to ``OptimisationRun.plot_iterations()``:
+    it reads a run directory's ``results.h5`` and opens the identical
+    interactive figure, so a run finished last month can be stepped through
+    exactly like one still in memory.
+
+    Parameters
+    ----------
+    run_dir : Path or str
+        The run directory written by OptimisationRun.run().
+    log_scale : bool, optional
+        If True (the default), the EI axis is log-scaled.
+    show : bool, optional
+        If True (the default), calls ``plt.show()``.
+
+    Returns
+    -------
+    matplotlib.widgets.Slider
+        The slider. **Assign it to a variable that outlives the call**, or
+        matplotlib will garbage collect it and it will stop responding.
+
+    Raises
+    ------
+    FileNotFoundError
+        If run_dir does not contain a results.h5 file.
+    RuntimeError
+        If the run was executed without ``store_snapshots``.
+    """
+    snapshots = _load_iteration_snapshots(run_dir)
+
+    with h5py.File(Path(run_dir) / "results.h5", "r") as f:
+        ei_threshold = float(f.attrs["ei_threshold"])
+
+    return _draw_iteration_slider(
+        snapshots, ei_threshold, log_scale=log_scale, show=show
+    )
+
+
+# The validation metrics, one panel each, in reading order. Named once so
+# plot_metrics and load_metrics cannot drift apart, and so a panel is added
+# by editing this tuple alone.
+METRIC_FIELDS = ("current_best", "improvement", "max_ei", "prediction_error")
+
+
+def _draw_metrics(
+    iteration: Sequence[float],
+    series: dict[str, Sequence[float]],
+    best_x: float,
+    best_y: float,
+    stop_reason: str,
+    fitted_hyperparameters: dict[str, float] | None = None,
     show: bool = True,
     log_scale: bool = True,
-) -> tuple[Figure, Axes]:
+) -> tuple[Figure, np.ndarray]:
+    """Draw the validation-metrics figure from already-loaded series.
+
+    The single definition of this figure, shared by
+    ``OptimisationRun.plot_metrics`` (which passes the series it holds in
+    memory) and ``load_metrics`` (which reads them from a saved
+    ``results.h5``), so the two cannot drift apart.
+
+    One panel per metric rather than one shared axes: the four series have
+    unrelated units and ranges (``max_ei`` spans orders of magnitude,
+    ``improvement`` is frequently exactly zero, ``prediction_error`` is
+    signed), so overlaying them flattens all but the largest into a line
+    along zero.
+
+    Parameters
+    ----------
+    iteration : sequence of float
+        The iteration numbers, the shared x-axis of every panel.
+    series : dict
+        The per-iteration values, keyed by the names in METRIC_FIELDS.
+        All entries must be the same length as iteration.
+    best_x, best_y : float
+        The run's outcome, reported in the figure title.
+    stop_reason : str
+        Which convergence criterion fired, reported in the figure title.
+    fitted_hyperparameters : dict or None, optional
+        The surrogate's final hyperparameters, added as a second title
+        line when given.
+    show : bool, optional
+        Whether to call plt.show() immediately, by default True.
+    log_scale : bool, optional
+        If True (the default), the ``max_ei`` panel is log-scaled. EI
+        shrinks by orders of magnitude as a run converges, which a linear
+        axis compresses into an invisible flat line at zero.
+
+    Returns
+    -------
+    tuple[Figure, numpy.ndarray]
+        The figure and its 2x2 array of axes.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    _name_window(fig, "actgpr: validation metrics")
+
+    for ax, field in zip(axes.flatten(), METRIC_FIELDS):
+        ax.plot(iteration, series[field], "o-", color="tab:blue")
+        ax.axhline(0, color="grey", linestyle=":", linewidth=1)
+        ax.set_xlabel("iteration")
+        ax.set_ylabel(field)
+        ax.set_title(field)
+
+    if log_scale:
+        axes.flatten()[METRIC_FIELDS.index("max_ei")].set_yscale("log")
+
+    # Same best_x/best_y labelling as the iteration snapshots, so the two
+    # figures report the run's outcome identically whether it comes from
+    # memory or from results.h5.
+    title = (
+        f"Validation metrics | best_x: {best_x:.4f} | "
+        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    )
+    if fitted_hyperparameters:
+        title += "\nfinal " + " | ".join(
+            f"{key}: {value:.4g}" for key, value in fitted_hyperparameters.items()
+        )
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
+
+
+def load_metrics(
+    run_dir: Path | str,
+    show: bool = True,
+    log_scale: bool = True,
+) -> tuple[Figure, np.ndarray]:
     """Plot validation metrics vs. iteration from a saved run's results.h5.
 
-    Reads the ``/history`` series directly from ``results.h5``, with no
-    OptimisationRun object needed, so a past run can be visualised from
-    its run directory alone at any later time.
+    The from-the-logs counterpart to ``OptimisationRun.plot_metrics()``: it
+    reads the ``/history`` series straight from ``results.h5``, with no
+    OptimisationRun object needed, so a past run can be visualised from its
+    run directory alone at any later time. Both open the identical figure.
 
     Parameters
     ----------
     run_dir : Path or str
         The run directory written by OptimisationRun.run() (the folder
         containing ``results.h5``, not the file itself).
-    ax : matplotlib.axes.Axes or None, optional
-        An existing axes to draw on. If None, a new figure and axes are created.
     show : bool, optional
         Whether to call plt.show() immediately, by default True.
     log_scale : bool, optional
-        If True (the default), ``max_ei`` is drawn on a second y-axis with a
-        log scale, matching ``OptimisationRun.plot_iterations()``. EI shrinks
-        by orders of magnitude as a run converges, so a linear axis hides
-        the shrinkage that signals convergence. Pass False to omit the
-        ``max_ei`` axis entirely.
-
-        ``prediction_error`` and ``improvement`` stay on the linear primary
-        axis either way: ``prediction_error`` is signed and ``improvement``
-        is frequently exactly zero, neither of which a log axis can render.
+        If True (the default), the ``max_ei`` panel is log-scaled. EI
+        shrinks by orders of magnitude as a run converges, so a linear axis
+        hides the shrinkage that signals convergence.
 
     Returns
     -------
-    tuple[Figure, Axes]
-        The figure and the primary axes. When ``log_scale`` is True the
-        ``max_ei`` twin axis is reachable via ``ax.get_shared_x_axes()`` or
-        ``fig.axes[1]``.
+    tuple[Figure, numpy.ndarray]
+        The figure and its 2x2 array of axes, one panel per metric.
 
     Raises
     ------
@@ -550,9 +740,7 @@ def plot_run_history(
     with h5py.File(h5_path, "r") as f:
         history = f["history"]
         iteration = history["iteration"][:]
-        prediction_error = history["prediction_error"][:]
-        improvement = history["improvement"][:]
-        max_ei = history["max_ei"][:]
+        series = {field: history[field][:] for field in METRIC_FIELDS}
         best_x = f["final"].attrs["best_x"]
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
@@ -564,43 +752,13 @@ def plot_run_history(
             if f"fitted_{key}" in f["final"].attrs
         }
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    else:
-        fig = ax.get_figure()
-
-    lines = ax.plot(iteration, prediction_error, "o-", label="prediction_error")
-    lines += ax.plot(iteration, improvement, "o-", label="improvement")
-    ax.axhline(0, color="grey", linestyle=":", linewidth=1)
-    ax.set_xlabel("iteration")
-    ax.set_ylabel("value")
-    # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
-    # plotting entry points report the run's outcome identically whether it
-    # is read from memory or reconstructed from results.h5.
-    title = (
-        f"Run history | best_x: {best_x:.4f} | "
-        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    return _draw_metrics(
+        iteration=iteration,
+        series=series,
+        best_x=best_x,
+        best_y=best_y,
+        stop_reason=stop_reason,
+        fitted_hyperparameters=fitted,
+        show=show,
+        log_scale=log_scale,
     )
-    # Second line mirrors plot_iteration_snapshot's, except these are the
-    # values the run ended on rather than one iteration's.
-    if fitted:
-        title += "\nfinal " + " | ".join(
-            f"{key}: {value:.4g}" for key, value in fitted.items()
-        )
-    ax.set_title(title)
-
-    if log_scale:
-        # max_ei spans orders of magnitude while prediction_error and
-        # improvement are linear and signed, so it gets its own log axis
-        # rather than flattening everything onto one scale.
-        ei_ax = ax.twinx()
-        ei_ax.set_yscale("log")
-        lines += ei_ax.plot(iteration, max_ei, "s--", color="green", label="max_ei")
-        ei_ax.set_ylabel("max_ei (log)")
-
-    ax.legend(lines, [line.get_label() for line in lines])
-
-    if show:
-        plt.show()
-
-    return fig, ax

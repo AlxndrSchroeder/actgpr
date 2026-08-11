@@ -160,7 +160,7 @@ class TestZoomRefinement:
 
         The fine grid used to refine the returned point is local and
         internal — it must not replace the coarse candidates/f_mean/f_var/
-        ei_scores arrays that plot_iteration_snapshot() relies on to draw
+        ei_scores arrays that _plot_iteration_snapshot() relies on to draw
         the full EI landscape.
         """
         acquisition.find_next_input_point(current_best=0.0)

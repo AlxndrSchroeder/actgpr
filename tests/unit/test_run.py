@@ -171,6 +171,206 @@ class TestOptimisationRunInit:
         )
 
 
+class TestRunDirectory:
+    """Tests for locating a run's own MRR record afterwards."""
+
+    def test_run_dir_is_none_before_running(self, tmp_path: Path) -> None:
+        """Test that no directory is claimed until the run starts."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            run_dir=tmp_path,
+        )
+
+        assert run.run_dir is None
+
+    def test_run_dir_exposes_the_written_directory(self, tmp_path: Path) -> None:
+        """Test that the caller can find its own MRR record after a run.
+
+        run_dir passed in is only a base path; the run writes to a
+        timestamped folder beneath it. Without this the caller would have to
+        glob results/ and guess which directory was theirs.
+        """
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        (written,) = list(tmp_path.iterdir())
+        assert run.run_dir == written
+        assert (run.run_dir / "results.h5").exists()
+
+    def test_run_dir_stays_none_without_a_run_dir(self) -> None:
+        """Test that a run writing nothing reports no directory."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        run.run()
+
+        assert run.run_dir is None
+
+
+class TestPlotHistory:
+    """Tests for OptimisationRun.plot_metrics."""
+
+    def test_raises_before_the_run(self) -> None:
+        """Test that plotting a history that does not exist yet is an error."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+
+        with pytest.raises(RuntimeError, match="No history available"):
+            run.plot_metrics(show=False)
+
+    def test_works_without_a_run_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that a run writing no MRR record can still plot its metrics.
+
+        The series live in memory either way; before this method they were
+        only reachable by reading results.h5, so a run without run_dir had
+        no route to them at all.
+        """
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        torch.manual_seed(SEED)
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=4,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        result = run.run()
+
+        assert run.run_dir is None
+        fig, axes = run.plot_metrics(show=False)
+        title = fig._suptitle.get_text()
+
+        assert axes.shape == (2, 2)
+        assert f"best_x: {result['best_x']:.4f}" in title
+        assert result["stop_reason"] in title
+
+    def test_matches_the_plot_read_back_from_disk(self, tmp_path: Path) -> None:
+        """Test that the in-memory and on-disk histories draw the same figure.
+
+        Both delegate to plotting._draw_metrics, so this guards the
+        single definition of the figure against the two callers drifting.
+        """
+        from actgpr.plotting import load_metrics
+
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=4,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        memory_fig, memory_axes = run.plot_metrics(show=False)
+        disk_fig, disk_axes = load_metrics(run.run_dir, show=False)
+
+        assert memory_fig._suptitle.get_text() == disk_fig._suptitle.get_text()
+        for from_memory, from_disk in zip(memory_axes.flatten(), disk_axes.flatten()):
+            assert from_memory.get_title() == from_disk.get_title()
+            memory_line = from_memory.get_lines()[0]
+            disk_line = from_disk.get_lines()[0]
+            assert list(memory_line.get_ydata()) == list(disk_line.get_ydata())
+
+    def test_log_scale_false_leaves_every_panel_linear(self, tmp_path: Path) -> None:
+        """Test that opting out drops the max_ei log axis, as on disk."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        run.run()
+
+        _, axes = run.plot_metrics(show=False, log_scale=False)
+
+        assert all(ax.get_yscale() == "linear" for ax in axes.flatten())
+
+
+class TestCustomObjective:
+    """Tests that an Objective need not be an ObjectiveFn."""
+
+    def test_a_plain_class_with_evaluate_is_accepted(self, tmp_path: Path) -> None:
+        """Test the documented promise: any object with evaluate() works.
+
+        The README and tutorial tell users to wrap a simulation in a class
+        of their own rather than in ObjectiveFn, so a class that inherits
+        nothing and registers nowhere has to drive a full run.
+        """
+
+        class MySimulation:
+            """A user's own Objective, unrelated to ObjectiveFn."""
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def evaluate(self, *x: float) -> tuple[float, ...]:
+                self.calls += len(x)
+                return tuple((v - 1.0) ** 2 for v in x)
+
+        simulation = MySimulation()
+        run = OptimisationRun.without_training(
+            objective=simulation,
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 5.0),
+            initial_train_x=[-3.0, 5.0],
+            max_iterations=6,
+            ei_threshold=1e-9,
+            n_candidates=60,
+            run_dir=tmp_path,
+        )
+        result = run.run()
+
+        assert not isinstance(simulation, ObjectiveFn)
+        assert simulation.calls > 2  # the loop kept calling it
+        assert abs(result["best_x"] - 1.0) < 0.5  # and it actually optimised
+
+        # It also lands in the MRR record, via repr() like any Objective.
+        config = json.loads((run.run_dir / "config.json").read_text())
+        assert "MySimulation" in config["objective"]
+
+
 class TestOptimisationRunRun:
     """Tests for OptimisationRun.run()."""
 
@@ -802,6 +1002,29 @@ class TestOptimisationRunSnapshots:
         snapshot_run._active_slider.set_val(2)  # simulate dragging to iteration 2
 
         assert gp_ax.get_title() != title_before
+
+    def test_show_false_defers_plt_show(
+        self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that show=False builds the figure without displaying it.
+
+        plt.show() displays every open figure, so opening this one and the
+        metrics figure with one plt.show() each re-displays this one on the
+        second call. Deferring lets a caller build both and show once.
+        """
+        import matplotlib.pyplot as plt
+
+        calls: list[int] = []
+        monkeypatch.setattr(plt, "show", lambda: calls.append(1))
+
+        snapshot_run.run()
+        snapshot_run.plot_iterations(show=False)
+
+        assert snapshot_run._active_slider is not None
+        assert calls == []
+
+        snapshot_run.plot_iterations()
+        assert calls == [1]
 
 
 class TestOptimisationRunWithoutTraining:

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 import pytest
 import torch
 
@@ -11,17 +12,20 @@ from actgpr.objective_fn import ObjectiveFn
 from actgpr.run import OptimisationRun
 from actgpr.surrogate import GPyTorchSurrogate
 from actgpr.plotting import (
-    load_snapshots,
-    plot_acquisition,
-    plot_iteration_snapshot,
-    plot_run_history,
+    METRIC_FIELDS,
+    _draw_iteration_slider,
+    _load_iteration_snapshots,
+    _plot_acquisition,
+    _plot_iteration_snapshot,
+    load_metrics,
+    load_iterations,
 )
 
 SEED = 25
 
 
 def _make_snapshot(iteration: int, ei_scores: torch.Tensor) -> dict:
-    """Build a minimal snapshot dict for plot_iteration_snapshot."""
+    """Build a minimal snapshot dict for _plot_iteration_snapshot."""
     candidates = torch.linspace(-1.0, 1.0, ei_scores.numel())
     return {
         "iteration": iteration,
@@ -40,14 +44,14 @@ def _make_snapshot(iteration: int, ei_scores: torch.Tensor) -> dict:
 
 
 class TestPlotAcquisition:
-    """Tests for plot_acquisition's y-axis scaling."""
+    """Tests for _plot_acquisition's y-axis scaling."""
 
     def test_autoscales_by_default(self) -> None:
         """Test that the y-axis autoscales to the data when ylim is not given."""
         candidates = torch.linspace(-1.0, 1.0, 10)
         ei_scores = torch.linspace(0.0, 0.1, 10)
 
-        _, ax = plot_acquisition(candidates, ei_scores, show=False)
+        _, ax = _plot_acquisition(candidates, ei_scores, show=False)
 
         lo, hi = ax.get_ylim()
         assert hi < 1.0
@@ -57,7 +61,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 10)
         ei_scores = torch.linspace(0.0, 0.1, 10)
 
-        _, ax = plot_acquisition(candidates, ei_scores, show=False, ylim=(0.0, 5.0))
+        _, ax = _plot_acquisition(candidates, ei_scores, show=False, ylim=(0.0, 5.0))
 
         assert ax.get_ylim() == (0.0, 5.0)
 
@@ -73,7 +77,7 @@ class TestPlotAcquisition:
         big_scores = torch.linspace(0.0, 1.8, 10)
         small_scores = torch.linspace(0.0, 0.01, 10)
 
-        plot_acquisition(
+        _plot_acquisition(
             torch.linspace(-1.0, 1.0, 10),
             big_scores,
             ax=ax,
@@ -83,7 +87,7 @@ class TestPlotAcquisition:
         first_ylim = ax.get_ylim()
 
         ax.cla()
-        plot_acquisition(
+        _plot_acquisition(
             torch.linspace(-1.0, 1.0, 10),
             small_scores,
             ax=ax,
@@ -99,7 +103,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 10)
         ei_scores = torch.linspace(0.0, 0.1, 10)
 
-        _, ax = plot_acquisition(candidates, ei_scores, show=False, log_scale=True)
+        _, ax = _plot_acquisition(candidates, ei_scores, show=False, log_scale=True)
 
         assert ax.get_yscale() == "log"
 
@@ -113,7 +117,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 5)
         ei_scores = torch.tensor([0.0, 0.1, 0.0, 0.2, 0.0])
 
-        _, ax = plot_acquisition(
+        _, ax = _plot_acquisition(
             candidates, ei_scores, show=False, log_scale=True, ei_threshold=0.01
         )
 
@@ -132,7 +136,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 5)
         ei_scores = torch.linspace(0.0, 0.05, 5)
 
-        _, ax = plot_acquisition(
+        _, ax = _plot_acquisition(
             candidates, ei_scores, show=False, log_scale=True, ei_threshold=0.01
         )
 
@@ -144,7 +148,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 5)
         ei_scores = torch.linspace(0.0, 0.05, 5)
 
-        _, ax = plot_acquisition(
+        _, ax = _plot_acquisition(
             candidates, ei_scores, show=False, log_scale=True, ei_threshold=0.01
         )
 
@@ -156,7 +160,7 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 5)
         ei_scores = torch.linspace(0.0, 0.05, 5)
 
-        _, ax = plot_acquisition(candidates, ei_scores, show=False)
+        _, ax = _plot_acquisition(candidates, ei_scores, show=False)
 
         labels = [line.get_label() for line in ax.get_lines()]
         assert not any("ei_threshold" in label for label in labels)
@@ -167,7 +171,7 @@ class TestPlotAcquisition:
         ei_scores = torch.tensor([0.0, 0.01, 0.05, 0.02, 0.0])
         next_point = candidates[2].item()  # matches argmax(ei_scores)
 
-        _, ax = plot_acquisition(
+        _, ax = _plot_acquisition(
             candidates, ei_scores, next_point=next_point, show=False
         )
 
@@ -185,21 +189,21 @@ class TestPlotAcquisition:
         candidates = torch.linspace(-1.0, 1.0, 5)
         ei_scores = torch.linspace(0.0, 0.05, 5)
 
-        _, ax = plot_acquisition(candidates, ei_scores, show=False)
+        _, ax = _plot_acquisition(candidates, ei_scores, show=False)
 
         labels = [line.get_label() for line in ax.get_lines()]
         assert not any("Max EI" in label for label in labels)
 
 
 class TestPlotIterationSnapshot:
-    """Tests for plot_iteration_snapshot's ei_ylim passthrough."""
+    """Tests for _plot_iteration_snapshot's ei_ylim passthrough."""
 
     def test_ei_ylim_none_autoscales(self) -> None:
         """Test that omitting ei_ylim autoscales the EI axis as before."""
         fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
         snapshot = _make_snapshot(1, torch.linspace(0.0, 0.05, 20))
 
-        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        _plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
 
         lo, hi = ei_ax.get_ylim()
         assert hi < 1.0
@@ -209,7 +213,7 @@ class TestPlotIterationSnapshot:
         fig, (gp_ax, ei_ax) = plt.subplots(2, 1)
         snapshot = _make_snapshot(1, torch.linspace(0.0, 0.05, 20))
 
-        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax), ei_ylim=(0.0, 3.0))
+        _plot_iteration_snapshot(snapshot, (gp_ax, ei_ax), ei_ylim=(0.0, 3.0))
 
         assert ei_ax.get_ylim() == (0.0, 3.0)
         assert gp_ax.get_ylim() != (0.0, 3.0)
@@ -233,7 +237,7 @@ class TestPlotIterationSnapshot:
             "max_ei": 0.001,
         }
 
-        plot_iteration_snapshot(convergence_snapshot, (gp_ax, ei_ax))
+        _plot_iteration_snapshot(convergence_snapshot, (gp_ax, ei_ax))
 
         assert "converged" in gp_ax.get_title()
         assert "pred_error" not in gp_ax.get_title()
@@ -264,7 +268,7 @@ class TestPlotIterationSnapshot:
             "noise": 1e-4,
         }
 
-        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        _plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
         title = gp_ax.get_title()
 
         assert "lengthscale: 0.75" in title
@@ -293,7 +297,7 @@ class TestPlotIterationSnapshot:
             "improvement": 0.2,
         }
 
-        plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
+        _plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
         title = gp_ax.get_title()
 
         assert "lengthscale" not in title
@@ -301,7 +305,7 @@ class TestPlotIterationSnapshot:
 
 
 class TestPlotRunHistory:
-    """Tests for plot_run_history — plotting a saved run from its path alone."""
+    """Tests for load_metrics — plotting a saved run from its path alone."""
 
     @pytest.fixture()
     def run_dir(self, tmp_path: Path) -> Path:
@@ -335,38 +339,41 @@ class TestPlotRunHistory:
     def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
         """Test that a clear error is raised for a directory without results.h5."""
         with pytest.raises(FileNotFoundError, match="results.h5"):
-            plot_run_history(tmp_path, show=False)
+            load_metrics(tmp_path, show=False)
 
     def test_accepts_only_the_run_directory(self, run_dir: Path) -> None:
         """Test that the run directory alone is enough to build the plot."""
-        fig, ax = plot_run_history(run_dir, show=False)
+        fig, axes = load_metrics(run_dir, show=False)
 
         assert fig is not None
-        assert ax is not None
+        assert axes.shape == (2, 2)
 
-    def test_plots_prediction_error_and_improvement(self, run_dir: Path) -> None:
-        """Test that both validation metric series are drawn."""
-        _, ax = plot_run_history(run_dir, show=False)
+    def test_draws_one_panel_per_metric(self, run_dir: Path) -> None:
+        """Test that every validation metric gets its own panel.
 
-        labels = [line.get_label() for line in ax.get_lines()]
-        assert "prediction_error" in labels
-        assert "improvement" in labels
+        The four series have unrelated units and ranges, so one shared axes
+        would flatten all but the largest into a line along zero.
+        """
+        _, axes = load_metrics(run_dir, show=False)
 
-        # Each plotted line has one point per iteration.
-        pred_error_line = next(
-            line for line in ax.get_lines() if line.get_label() == "prediction_error"
-        )
-        assert len(pred_error_line.get_xdata()) == 5
+        titles = [ax.get_title() for ax in axes.flatten()]
+        assert titles == list(METRIC_FIELDS)
+
+        # Each panel plots one point per iteration, plus the zero reference
+        # line the metric is read against.
+        for ax in axes.flatten():
+            metric_line = ax.get_lines()[0]
+            assert len(metric_line.get_xdata()) == 5
 
     def test_title_reports_best_x_best_y_and_stop_reason(self, run_dir: Path) -> None:
-        """Test that the title surfaces the run's final outcome.
+        """Test that the figure title surfaces the run's final outcome.
 
-        Labels match plot_iteration_snapshot's, so a run reconstructed from
+        Labels match _plot_iteration_snapshot's, so a run reconstructed from
         results.h5 reports its outcome the same way as one plotted straight
         from memory. `best:` alone is ambiguous about which of x or y it is.
         """
-        _, ax = plot_run_history(run_dir, show=False)
-        title = ax.get_title()
+        fig, _ = load_metrics(run_dir, show=False)
+        title = fig._suptitle.get_text()
 
         assert "best_x: 1.0000" in title
         assert "best_y: 0.2000" in title
@@ -374,47 +381,44 @@ class TestPlotRunHistory:
 
     def test_accepts_string_path(self, run_dir: Path) -> None:
         """Test that a plain string path works, not just a Path object."""
-        fig, ax = plot_run_history(str(run_dir), show=False)
-        assert ax is not None
+        _, axes = load_metrics(str(run_dir), show=False)
+        assert axes.shape == (2, 2)
 
-    def test_max_ei_drawn_on_a_log_twin_axis_by_default(self, run_dir: Path) -> None:
-        """Test that max_ei gets its own log-scaled axis without being asked.
+    def test_max_ei_panel_is_log_scaled_by_default(self, run_dir: Path) -> None:
+        """Test that max_ei gets a log axis without being asked.
 
-        Matches plot_iterations()'s log-scaled EI default. max_ei needs a
-        separate axis because it spans orders of magnitude, while
-        prediction_error and improvement are linear and signed.
+        Matches plot_iterations()'s log-scaled EI default: max_ei spans
+        orders of magnitude as a run converges, and a linear axis compresses
+        that shrinkage into an invisible flat line at zero.
         """
-        fig, ax = plot_run_history(run_dir, show=False)
+        _, axes = load_metrics(run_dir, show=False)
 
-        (ei_ax,) = [other for other in fig.axes if other is not ax]
-        assert ei_ax.get_yscale() == "log"
+        panels = dict(zip(METRIC_FIELDS, axes.flatten()))
+        assert panels["max_ei"].get_yscale() == "log"
 
-        ei_labels = [line.get_label() for line in ei_ax.get_lines()]
-        assert "max_ei" in ei_labels
-
-    def test_primary_axis_stays_linear(self, run_dir: Path) -> None:
-        """Test that the signed/zero-valued metrics keep a linear axis.
+    def test_other_panels_stay_linear(self, run_dir: Path) -> None:
+        """Test that the signed and zero-valued metrics keep a linear axis.
 
         prediction_error is signed and improvement is frequently exactly 0,
-        neither of which a log axis can render — so only max_ei goes log.
+        neither of which a log axis can render, so only max_ei goes log.
         """
-        _, ax = plot_run_history(run_dir, show=False)
+        _, axes = load_metrics(run_dir, show=False)
 
-        assert ax.get_yscale() == "linear"
+        panels = dict(zip(METRIC_FIELDS, axes.flatten()))
+        for field in ("current_best", "improvement", "prediction_error"):
+            assert panels[field].get_yscale() == "linear"
 
-    def test_log_scale_false_omits_the_ei_axis(self, run_dir: Path) -> None:
-        """Test that opting out leaves only the original linear plot."""
-        fig, ax = plot_run_history(run_dir, show=False, log_scale=False)
+    def test_log_scale_false_leaves_every_panel_linear(self, run_dir: Path) -> None:
+        """Test that opting out drops the log axis on the max_ei panel too."""
+        _, axes = load_metrics(run_dir, show=False, log_scale=False)
 
-        assert fig.axes == [ax]
-        labels = [line.get_label() for line in ax.get_lines()]
-        assert "max_ei" not in labels
+        assert all(ax.get_yscale() == "linear" for ax in axes.flatten())
 
     def test_title_reports_final_hyperparameters(self, tmp_path: Path) -> None:
         """Test that the run's final hyperparameters reach the title.
 
-        Mirrors plot_iteration_snapshot, so the two plotting entry points
-        surface the same information about the surrogate.
+        Mirrors _plot_iteration_snapshot, so the two figures surface the
+        same information about the surrogate.
         """
         mrr.save_hdf5(
             tmp_path,
@@ -444,38 +448,28 @@ class TestPlotRunHistory:
             },
         )
 
-        _, ax = plot_run_history(tmp_path, show=False)
-        title = ax.get_title()
+        fig, _ = load_metrics(tmp_path, show=False)
+        title = fig._suptitle.get_text()
 
         assert "lengthscale: 1.25" in title
         assert "outputscale: 2.5" in title
 
     def test_title_omits_hyperparameters_when_absent(self, run_dir: Path) -> None:
         """Test that a record without them still produces a valid title."""
-        _, ax = plot_run_history(run_dir, show=False)
+        fig, _ = load_metrics(run_dir, show=False)
+        title = fig._suptitle.get_text()
 
-        assert "lengthscale" not in ax.get_title()
-        assert "best_x" in ax.get_title()
-
-    def test_legend_covers_both_axes(self, run_dir: Path) -> None:
-        """Test that max_ei appears in the legend despite being on a twin axis.
-
-        Twin axes each own their lines, so a plain ax.legend() would silently
-        drop max_ei from the legend.
-        """
-        _, ax = plot_run_history(run_dir, show=False)
-
-        legend_labels = [text.get_text() for text in ax.get_legend().get_texts()]
-        assert set(legend_labels) == {"prediction_error", "improvement", "max_ei"}
+        assert "lengthscale" not in title
+        assert "best_x" in title
 
 
 class TestLoadSnapshots:
     """Tests for rebuilding a saved run's snapshots from results.h5."""
 
     def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
-        """Test the same clear error plot_run_history gives."""
+        """Test the same clear error load_metrics gives."""
         with pytest.raises(FileNotFoundError, match="results.h5"):
-            load_snapshots(tmp_path)
+            _load_iteration_snapshots(tmp_path)
 
     def test_raises_when_run_stored_no_snapshots(self, tmp_path: Path) -> None:
         """Test that a run without store_snapshots says so, rather than KeyError."""
@@ -503,7 +497,7 @@ class TestLoadSnapshots:
         )
 
         with pytest.raises(RuntimeError, match="store_snapshots"):
-            load_snapshots(tmp_path)
+            _load_iteration_snapshots(tmp_path)
 
     def test_round_trips_the_in_memory_snapshots(self, tmp_path: Path) -> None:
         """Test that what comes back matches what the run held in memory.
@@ -528,7 +522,7 @@ class TestLoadSnapshots:
         run.run()
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = _load_iteration_snapshots(run_dir)
         in_memory = [r for r in run._results if "candidates" in r]
 
         assert len(loaded) == len(in_memory)
@@ -560,7 +554,7 @@ class TestLoadSnapshots:
         assert result["stop_reason"] == "ei_threshold"
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = _load_iteration_snapshots(run_dir)
 
         # The converged frame is last and carries no evaluation metrics.
         converged = loaded[-1]
@@ -569,7 +563,7 @@ class TestLoadSnapshots:
         assert all("lengthscale" in snapshot for snapshot in loaded)
 
     def test_snapshots_are_plottable(self, tmp_path: Path) -> None:
-        """Test that a loaded snapshot feeds straight into plot_iteration_snapshot."""
+        """Test that a loaded snapshot feeds straight into _plot_iteration_snapshot."""
         torch.manual_seed(SEED)
         run = OptimisationRun.with_training(
             objective=ObjectiveFn(),
@@ -585,10 +579,156 @@ class TestLoadSnapshots:
         run.run()
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = _load_iteration_snapshots(run_dir)
 
         _, (gp_ax, ei_ax) = plt.subplots(2, 1)
-        plot_iteration_snapshot(loaded[-1], (gp_ax, ei_ax))
+        _plot_iteration_snapshot(loaded[-1], (gp_ax, ei_ax))
 
         assert "best_x" in gp_ax.get_title()
         assert "lengthscale" in gp_ax.get_title()
+
+
+class TestPlotRunIterations:
+    """Tests for browsing a saved run with the same slider as a live one."""
+
+    @pytest.fixture()
+    def saved_run(self, tmp_path: Path) -> tuple[Path, OptimisationRun]:
+        """Execute a small run that writes an MRR record."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=5,
+            ei_threshold=0.01,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        run.run()
+        return run.run_dir, run
+
+    def test_returns_a_live_slider(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the slider is returned so the caller can keep it alive.
+
+        Matplotlib holds only a weak reference; a slider that is not kept
+        is collected and silently stops responding, which is why this
+        returns it rather than discarding it like the method can.
+        """
+        monkeypatch.setattr(plt, "show", lambda: None)
+        run_dir, _ = saved_run
+
+        slider = load_iterations(run_dir)
+
+        assert slider is not None
+        assert slider.valmin == 1
+
+    def test_matches_the_live_slider(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that the disk browser shows the same frames as the run object.
+
+        Both delegate to plotting._draw_iteration_slider, so this guards the
+        single definition of the figure against the two callers drifting.
+        """
+        monkeypatch.setattr(plt, "show", lambda: None)
+        run_dir, run = saved_run
+
+        run.plot_iterations()
+        live_title = plt.gcf().axes[0].get_title()
+        live_frames = run._active_slider.valmax
+
+        slider = load_iterations(run_dir)
+        disk_title = plt.gcf().axes[0].get_title()
+
+        assert slider.valmax == live_frames
+        assert disk_title == live_title
+
+    def test_two_step_route_gives_the_same_slider(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that loading then plotting the snapshots also gives a slider.
+
+        The documented two-call route for a saved run must reach the same
+        interactive figure as the one-call load_iterations, otherwise
+        the loader's output is only usable for static frames.
+        """
+        monkeypatch.setattr(plt, "show", lambda: None)
+        run_dir, run = saved_run
+
+        snapshots = _load_iteration_snapshots(run_dir)
+        slider = _draw_iteration_slider(snapshots, run.ei_threshold)
+
+        assert isinstance(slider, Slider)
+        assert slider.valmax == len(snapshots)
+
+    def test_show_false_leaves_the_figure_unshown(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that show=False builds the slider without calling plt.show().
+
+        OptimisationRun.plot_iterations relies on this to store the Slider
+        before a blocking backend takes over.
+        """
+        calls: list[int] = []
+        monkeypatch.setattr(plt, "show", lambda: calls.append(1))
+        run_dir, run = saved_run
+
+        snapshots = _load_iteration_snapshots(run_dir)
+        slider = _draw_iteration_slider(snapshots, run.ei_threshold, show=False)
+
+        assert isinstance(slider, Slider)
+        assert calls == []
+
+    def test_the_two_figures_get_distinct_window_titles(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that both figures name their window.
+
+        Matplotlib titles windows "Figure 1"/"Figure 2" and opens them at
+        the same position, so with both on screen neither the title bar nor
+        the window switcher says which is which.
+        """
+        monkeypatch.setattr(plt, "show", lambda: None)
+        run_dir, _ = saved_run
+
+        load_iterations(run_dir, show=False)
+        iterations_title = plt.gcf().canvas.manager.get_window_title()
+
+        load_metrics(run_dir, show=False)
+        metrics_title = plt.gcf().canvas.manager.get_window_title()
+
+        assert "iterations" in iterations_title
+        assert "metrics" in metrics_title
+        assert iterations_title != metrics_title
+
+    def test_raises_without_snapshots(self, tmp_path: Path) -> None:
+        """Test that a run stored without snapshots gives the clear error."""
+        mrr.save_hdf5(
+            tmp_path,
+            results=[
+                {
+                    "iteration": 1,
+                    "next_point": 0.5,
+                    "new_y": 0.25,
+                    "current_best": 0.25,
+                    "max_ei": 0.1,
+                    "prediction_error": 0.01,
+                    "improvement": 0.0,
+                }
+            ],
+            config={"ei_threshold": 0.01},
+            store_snapshots=False,
+            final_train_x=torch.tensor([0.0, 1.0]),
+            final_train_y=torch.tensor([1.0, 0.5]),
+            best_x=1.0,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=1,
+        )
+
+        with pytest.raises(RuntimeError, match="store_snapshots"):
+            load_iterations(tmp_path)

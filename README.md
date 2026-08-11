@@ -23,9 +23,9 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 
 Requires Python ≥ 3.13. Pick whichever ecosystem you already use.
 
-> **Planned:** publishing `actgpr` to PyPI, so that installing becomes `pip install actgpr` and you can `import actgpr` from any project without cloning this repository. Until then, use one of the two paths below.
+> **Planned:** publishing `actgpr` to PyPI. Until then, use one of the two paths below.
 
-**With Poetry** (needs [Poetry](https://python-poetry.org/) ≥ 2.0, because the project uses the PEP 621 `pyproject.toml` format that Poetry 1.x cannot read). Versions are pinned in `poetry.lock`:
+**With [Poetry](https://python-poetry.org/)** (≥ 2.0). Versions are pinned in `poetry.lock`:
 
 ```bash
 git clone https://github.com/AlxndrSchroeder/actgpr.git
@@ -33,7 +33,7 @@ cd actgpr
 poetry install
 ```
 
-**With conda** (needs [conda-lock](https://github.com/conda/conda-lock)). Versions are pinned in `conda-lock.yml`, solved separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`:
+**With [conda-lock](https://github.com/conda/conda-lock)**. Versions are pinned in `conda-lock.yml`, solved for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`:
 
 ```bash
 git clone https://github.com/AlxndrSchroeder/actgpr.git
@@ -43,16 +43,13 @@ conda activate actgpr
 pip install -e . --no-deps          # the package itself; deps come from the lock file
 ```
 
-`environment.yml` holds the conda *ranges* (the input to conda-lock) and
-`pyproject.toml` the Poetry ones; `conda-lock.yml` and `poetry.lock` hold
-the respective *resolved* versions. Install from the lock files, not the
-range files, for a reproducible environment.
+`environment.yml` and `pyproject.toml` hold version *ranges*; `conda-lock.yml` and `poetry.lock` hold the *resolved* versions. Install from the lock files.
 
 ## Quick start
 
 The usage pattern:
 
-1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation it is usually more natural to write your own class with an `evaluate()` method instead, since `actgpr` never checks the type, only that the method exists.
+1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. There are two routes, described under [Writing your Objective](#writing-your-objective) below.
 2. **Configure the run.** Beyond the Objective and Surrogate you set `search_bounds` (the closed interval `[lo, hi]` in which the minimum is searched), `initial_train_x` (the points that seed the loop), `max_iterations` (budget cap), `ei_threshold` (early stopping threshold), `noise` (observation noise variance), and optionally `run_dir` (where to write the MRR record). See the parameter tables in the [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) for the full list.
 3. **Execute** with `run()`, which returns `best_x` and `best_y` along with the full training data.
 4. **Inspect** the run with `plot_iterations()`.
@@ -61,8 +58,8 @@ The usage pattern:
 from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
 
 
-# 1. Your blackbox function. Here an analytic stand-in for the tutorial.
-#    In practice it might run a simulation or trigger an experiment.
+# 1. Your blackbox function. Here an analytic stand-in.
+#    In practice it might run a simulation.
 def my_blackbox(x: float) -> float:
     return (x - 1) ** 2
 
@@ -135,6 +132,53 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
 
+`run.plot_metrics()` summarises the same run as four metrics against iteration, one panel each:
+
+<img src="assets/plot_metrics_demo.png" width="700" alt="current_best, improvement, max_ei and prediction_error against iteration for the same run">
+
+- **`current_best`** is the lowest objective value found so far. It steps down and then flattens, which is the run finding the minimum and then confirming it.
+- **`improvement`** is how much each evaluation lowered `current_best`. It spikes early, then sits at zero once the optimiser is refining rather than discovering. Flat `improvement` while `max_ei` is still high means the search is exploring, not finished.
+- **`max_ei`** (log axis) is the convergence signal. It falls by three orders of magnitude and the run stops when it crosses `ei_threshold`. A run that has not converged shows this line still comfortably above the threshold.
+- **`prediction_error`** is `predicted_y - new_y`: how wrong the surrogate was about the point it just chose. Large and swinging either side of zero early on, then settling towards zero as the surrogate learns the objective. It is signed, which is why it cannot share the log axis.
+
+One panel per metric rather than one shared axes: the four have unrelated units and ranges, so overlaying them flattens all but the largest into a line along zero.
+
+### Writing your Objective
+
+`actgpr` never inspects the type of your Objective. It only ever calls `.evaluate(...)`, so the interface is a single method and there is no base class to inherit and nothing to register. This is deliberate: it is what lets you plug in a simulation of your own without adapting it to `actgpr`. The interface is declared as a `typing.Protocol` (`actgpr.objective_fn.Objective`), so type checkers accept your class too.
+
+**Route A: a plain function.** Wrap it in `ObjectiveFn`, as in the example above:
+
+```python
+objective = ObjectiveFn(lambda x: (x - 1) ** 2)
+```
+
+**Route B: your own simulation.** Write your own class exposing `evaluate()`. Do *not* wrap it in `ObjectiveFn`. Use this whenever there is setup, configuration, or state involved:
+
+```python
+class MySimulation:
+    def __init__(self, config):
+        self.config = config          # solver settings, mesh, fixed parameters
+
+    def evaluate(self, *x: float) -> tuple[float, ...]:
+        return tuple(self._solve(v) for v in x)
+
+    def _solve(self, x: float) -> float:
+        ...                           # run your simulation at x, return its output
+
+
+run = OptimisationRun.with_training(objective=MySimulation(config), ...)
+```
+
+`OptimisationRun` treats both identically. `config.json` records whichever you used via its `repr()`, so the MRR record still identifies the Objective.
+
+**Simulating a noisy experiment:** a real instrument's readings are noisy, an analytic function is not. Pass `jitter` to add Gaussian noise to each evaluation, and set the surrogate's `noise` to match (`jitter` is a standard deviation, `noise` a variance):
+
+```python
+objective = ObjectiveFn(my_blackbox, jitter=0.1)   # seeded, so runs stay reproducible
+run = OptimisationRun.with_training(..., noise=0.1**2)
+```
+
 **Fit modes:** the two constructors select how GP hyperparameters are handled.
 
 - `OptimisationRun.with_training(...)` re-tunes lengthscale, outputscale, and noise at every iteration using [Adam](https://arxiv.org/abs/1412.6980) (`torch.optim.Adam`), a gradient descent variant with momentum and per-parameter step sizes: over `training_iter` steps it adjusts the hyperparameters to maximise the marginal log likelihood, meaning how plausible the observed training data is under a GP with those hyperparameters. Adam only fits the surrogate; it never evaluates the blackbox. Use this mode when you do not know good hyperparameters, which is the usual case.
@@ -155,7 +199,7 @@ run = OptimisationRun.without_training(
 result = run.run()
 ```
 
-Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them, since they are the bulk of `results.h5`'s size. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded either way, regardless of this flag.
+Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them, since they are the bulk of `results.h5`'s size. The validation metrics shown by `load_metrics()` are recorded either way, regardless of this flag.
 
 EI often shrinks by orders of magnitude as a run converges, enough to look like a flat line at zero on a linear axis. `plot_iterations()` therefore draws the EI axis on a log scale by default, with `ei_threshold` as a reference line so you can see the EI curve cross into converged territory. Pass `log_scale=False` for a linear axis.
 
@@ -197,40 +241,43 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
                  loop starts and records only the starting point
 ```
 
-To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error`, `improvement`, and `max_ei` vs. iteration straight from a run directory's `results.h5`, with no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk. As in `plot_iterations()`, `max_ei` is drawn on a log scale by default, on its own right-hand axis since it spans orders of magnitude while the other two are linear and signed. Pass `log_scale=False` to omit it:
+To browse `results.h5` without writing code, the [H5Web](https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web) VS Code extension opens HDF5 files directly in the editor, with the groups, attributes, and plots of any dataset.
 
-```python
-from actgpr.plotting import plot_run_history
-
-plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
-```
-
-For the per-iteration state rather than the summary, `load_snapshots(run_dir)` rebuilds the same snapshots `plot_iterations()` browses in memory, so a finished run's iterations can be replotted from disk (requires the run to have kept snapshots):
-
-```python
-from actgpr.plotting import load_snapshots, plot_iteration_snapshot
-
-snapshots = load_snapshots(run_dir)
-plot_iteration_snapshot(snapshots[-1], axes)
-```
+Both figures below can also be rebuilt from this directory alone, with no `OptimisationRun` object, so they work on any run you (or someone else) have on disk.
 
 ## Plotting
 
-`OptimisationRun.plot_iterations()` covers the common case. Everything else lives in `actgpr.plotting` and is imported from there, since the package exports only the four core classes:
+Two figures, each reachable two ways. That is the whole plotting API:
 
-| Use | What it draws |
-|---|---|
-| `run.plot_iterations()` | **Start here.** Interactive slider over every iteration of a finished run: GP fit on top, EI landscape below. A method on `OptimisationRun`, not in `actgpr.plotting`. |
-| `plot_run_history(run_dir)` | The whole run as one figure: `prediction_error`, `improvement`, and `max_ei` vs. iteration, read from a run directory. Use it to judge convergence at a glance, or to revisit a run you no longer have an object for. |
-| `load_snapshots(run_dir)` | Not a plot. Rebuilds a saved run's per-iteration snapshots so they can be fed to `plot_iteration_snapshot` without an `OptimisationRun`. |
-| `plot_iteration_snapshot(snapshot, axes)` | One iteration's GP + EI pair, drawn onto axes you supply. Use it to export single frames, build animations, or lay several iterations out side by side. |
-| `plot_surrogate(surrogate, test_x)` | A fitted surrogate on its own, with no run and no EI. Use it to inspect a `GPyTorchSurrogate` you fitted yourself. |
-| `plot_acquisition(candidates, ei_scores)` | The EI landscape on its own, without the GP panel. |
-| `plot_gp(candidates, f_mean, f_var, train_x, train_y)` | The lowest level: GP mean, 95 % band, and training data straight from tensors. Every other GP plot delegates to it. Use it when you have predictions from somewhere else. |
+| | The surrogate itself | Validation metrics |
+|---|---|---|
+| **From the run** | `run.plot_iterations()` | `run.plot_metrics()` |
+| **From the logs** | `load_iterations(run_dir)` | `load_metrics(run_dir)` |
 
-`plot_gp`, `plot_surrogate`, `plot_acquisition`, and `plot_run_history` all take `ax=` to draw onto an existing axes and `show=False` to defer `plt.show()`, so they compose into multi-panel layouts. `plot_iteration_snapshot` takes an `axes` pair instead and never calls `plt.show()` itself, since it fills two panels at once.
+The prefix says where the data comes from. `plot_` draws from the run object you are still holding, so those two are methods on `OptimisationRun`. `load_` takes the path to a run's log directory, reads its `results.h5`, and draws the same figure, so those two are functions imported from `actgpr.plotting`.
 
-Log-scaling the EI axis is the default only on the two entry points meant to be called directly, `run.plot_iterations()` and `plot_run_history()`. The lower-level `plot_acquisition` and `plot_iteration_snapshot` default to linear (`log_scale=False` and `ei_log_scale=False`) and expect the caller to opt in, since they are usually driven by code that sets the axis range explicitly.
+- **`run.plot_iterations()`** opens an interactive slider over every iteration: the GP fit on top, the EI landscape below. Watching the confidence band narrow around the minimum is the clearest picture of what the algorithm did. Shown in the GIF above.
+- **`run.plot_metrics()`** draws the whole run as four panels, `current_best`, `improvement`, `max_ei` and `prediction_error` against iteration, to judge convergence at a glance. Shown in the image above.
+- **`load_iterations(run_dir)`** is the same slider, for a run read back from its logs. Keep the returned `Slider` in a variable, or matplotlib collects it and it stops responding to drags.
+- **`load_metrics(run_dir)`** is the same four panels, for a run read back from its logs.
+
+Each pair is the identical figure, so which one to reach for depends solely on what you still have to hand. `run.run_dir` holds the directory a run wrote to, so the `load_` pair works on a run you just finished as well as on one from last month. Both `load_` functions need only that path:
+
+```python
+import matplotlib.pyplot as plt
+from actgpr.plotting import load_iterations, load_metrics
+
+run_dir = "results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002"
+
+slider = load_iterations(run_dir, show=False)
+load_metrics(run_dir, show=False)
+
+plt.show()  # once, for both
+```
+
+All four take `show=False`. Use it whenever you open more than one figure: `plt.show()` displays *every* open figure, not just the newest, so calling it once per figure re-displays the earlier ones and the first window flickers back as the last one closes. Build the figures, then call `plt.show()` yourself.
+
+`load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) walks through both figures panel by panel.
 
 ## Vocabulary
 
@@ -296,7 +343,7 @@ Log-scaling the EI axis is the default only on the two entry points meant to be 
 | **`stop_reason`** | Which criterion fired: `"ei_threshold"` or `"max_iterations"`. |
 | **`new_y`** | The Objective output at the newly evaluated `next_point`. |
 | **`best_x` / `best_y`** | The input point with the lowest Objective output, and that output, which together are the final result. |
-| **`store_snapshots`** | If `True` (the default), each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. Set `False` to omit them and keep `results.h5` small. The `prediction_error`/`improvement` history used by `plot_run_history()` is recorded regardless of this flag. |
+| **`store_snapshots`** | If `True` (the default), each iteration's full GP + EI state is also kept for interactive browsing via `plot_iterations()`. Set `False` to omit them and keep `results.h5` small. The validation metrics shown by `load_metrics()` are recorded regardless of this flag. |
 | **Deferred-write accumulator** | Per-iteration results are collected in memory during the run and written to `results.h5` once at the end. |
 
 ### Validation metrics
@@ -315,8 +362,8 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **MRR** | Minimal Reproducible Run, a pattern requiring every run to record: what was run, with what inputs, in which environment, what happened, and what came out. |
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
-| **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
-| **`load_snapshots()`** | Rebuilds a saved run's per-iteration GP/EI snapshots from its `results.h5`, so they can be replotted without an `OptimisationRun` object. |
+| **`load_metrics()`** | Builds the four-panel validation-metrics figure from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
+| **`load_iterations()`** | Opens the per-iteration slider from a run directory's `results.h5` alone, the same figure as `run.plot_iterations()`. |
 
 ## Development
 

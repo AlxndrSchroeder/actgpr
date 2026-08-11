@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The plotting API is now four entry points and nothing else, named so the
+  prefix says where the data comes from. `plot_` draws from the run object
+  you are holding: `OptimisationRun.plot_iterations()` and
+  `OptimisationRun.plot_metrics()`. `load_` takes the path to a run's log
+  directory and draws the same figure from its `results.h5`:
+  `plotting.load_iterations(run_dir)` and `plotting.load_metrics(run_dir)`.
+  Two figures, each reachable two ways. This renames
+  `plot_run_iterations` to `load_iterations`, `plot_run_history` to
+  `load_metrics`, and `OptimisationRun.plot_history()` to `plot_metrics()`:
+  the old names said neither what they drew nor where they read it from,
+  and `plot_iterations` sitting next to `plot_run_iterations` gave no hint
+  that one was in-memory and the other on-disk. `plot_gp`, `plot_acquisition`,
+  `plot_iteration_snapshot` and `load_iteration_snapshots` are the helpers
+  those four are built from and are now private (`_`-prefixed): they were
+  public only because they existed, and a user choosing between eight
+  plotting functions has to understand the internals to pick one.
+  `plot_surrogate` is removed outright, being a three-line wrapper around
+  `plot_gp` that nothing in the package called
+- `load_metrics()` and `plot_metrics()` now draw one panel per metric
+  in a 2x2 grid (`current_best`, `improvement`, `max_ei` on a log axis,
+  `prediction_error`) instead of overlaying `prediction_error` and
+  `improvement` on one axes with `max_ei` on a log twin axis. The four
+  series have unrelated units and ranges, so sharing an axes flattened all
+  but the largest into a line along zero, and `current_best`, the series
+  that actually shows the run finding the minimum, was not plotted at all.
+  Both now return the figure and its 2x2 array of axes; the `ax=`
+  parameter is gone, since a grid cannot be drawn onto a single axes
+
+- The Objective interface is now declared as a `typing.Protocol`
+  (`actgpr.objective_fn.Objective`) and `OptimisationRun` is typed against
+  it. The docs always said any object with `evaluate()` works and the
+  runtime never checked the type, but the signatures declared
+  `objective: ObjectiveFn`, so a type checker rejected a user's own
+  simulation class. The duck typing is now expressed in the code
+- `OptimisationRun.run_dir` exposes the timestamped directory a run wrote
+  to. `run_dir` passed in is only a base path, and the resolved directory
+  was previously a local variable, so a caller could not locate its own MRR
+  record without globbing `results/`. This also makes
+  `load_metrics(run.run_dir)` work on a run you just finished, which
+  had no equivalent before
+
 - `store_snapshots` now defaults to `True`. Browsing a run with
   `plot_iterations()` previously required setting the flag before the run
   started, so anyone who had not anticipated it got a `RuntimeError` and had
@@ -18,21 +59,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shrinks by orders of magnitude as a run converges, which a linear axis
   compresses into an invisible flat line at zero; pass `log_scale=False`
   for a linear EI axis
-- `plot_run_history()` now also plots `max_ei`, on a log-scaled second
-  y-axis, so both plotting entry points show EI on a log scale by default.
-  `prediction_error` and `improvement` stay on the linear primary axis:
-  the former is signed and the latter is frequently exactly zero, and a log
-  axis can render neither. Pass `log_scale=False` to omit the `max_ei` axis
-- Plot titles now report `best_x` alongside `best_y`, in both
-  `plot_iterations()` and `plot_run_history()`. They previously showed only
+- Plot titles now report `best_x` alongside `best_y`, in both figures. They previously showed only
   `best:` followed by a number, which was the lowest Objective *output* so
   far but gave no hint of that, and never showed the input point that
-  achieved it; `plot_run_history()` omitted `best_x` entirely
+  achieved it; the validation figure omitted `best_x` entirely
 - Plot titles carry a second line with the surrogate's hyperparameters:
-  that iteration's fit in `plot_iterations()`, the run's final values in
-  `plot_run_history()`. Omitted when the surrogate does not report them
+  that iteration's fit in the slider, the run's final values in the
+  validation figure. Omitted when the surrogate does not report them
 
 ### Added
+
+- Both figures now title their window (`actgpr: iterations (GP fit and EI)`
+  and `actgpr: validation metrics`). Matplotlib names windows `Figure 1`
+  and `Figure 2` and opens them at the same default position, so with both
+  on screen the second covers the first and neither the title bar nor the
+  window switcher says which is which
+
+- `OptimisationRun.plot_iterations()` gained `show=False`, which the other
+  three entry points already had, so all four can now defer `plt.show()`.
+  Without it, opening the slider and the metrics figure from one script
+  meant two `plt.show()` calls, and `plt.show()` displays *every* open
+  figure rather than only the newest, so the slider window was re-displayed
+  by the second call and flickered back into view as the metrics window was
+  closed. Building both with `show=False` and calling `plt.show()` once
+  opens them side by side instead
+
+- `plotting.load_iterations(run_dir)` opens the interactive
+  per-iteration slider for a run read back from disk, the counterpart to
+  `OptimisationRun.plot_iterations()`. Browsing a saved run previously
+  meant rebuilding the slider by hand from `load_iteration_snapshots` and
+  `plot_iteration_snapshot`, which drew a single frame onto axes you
+  supplied, so the slider was the one thing the on-disk route could not
+  reach. Both routes now delegate to the same private helper, so the
+  figure has a single definition
+
+- `OptimisationRun.plot_metrics()` plots a run's validation metrics from
+  the object you still hold, the in-memory counterpart to
+  `load_metrics()`. The series were previously reachable only by
+  reading `results.h5`, so a run without `run_dir` had no route to them at
+  all. Both delegate to one private helper, so the figure has a single
+  definition
 
 - Conda is now a supported install path alongside Poetry: `environment.yml`
   declares the conda dependency spec and `conda-lock.yml` pins it, solved
@@ -67,11 +133,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` for lengthscale/outputscale and only the *starting* noise. Read
   via an optional `hyperparameters()` method on the surrogate, so a
   backend without one is unaffected
-- `plotting.load_snapshots(run_dir)` rebuilds a saved run's per-iteration
-  GP/EI snapshots from its `results.h5`, the per-iteration counterpart to
-  `plot_run_history()`. Previously only `OptimisationRun` could produce
-  them, so anything replotting a finished run had to reassemble the
-  snapshots field by field and silently lost whichever fields it missed
 - `config.json` now records `repr(objective)` under `"objective"`, so two
   runs with identical search parameters but different Objectives (or
   different `ObjectiveFn` jitter) are distinguishable from their MRR record
@@ -99,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `meta.json` now records `package_name` and `repository`, fetched from
   installed package metadata, so a run's provenance file identifies the
   software that produced it even if shared on its own
-- `plotting.plot_run_history(run_dir)` builds the `prediction_error` /
+- `plotting.load_metrics(run_dir)` builds the `prediction_error` /
   `improvement` vs. iteration plot directly from a saved run's `results.h5`
   with no `OptimisationRun` object needed
 - `run.log` now ends with a summary line giving `best_x`/`best_y`/
@@ -114,7 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clarified in `run.py` docstrings and the README that `store_snapshots`
   only gates the per-iteration GP/EI arrays used by `plot_iterations()`;
-  the `prediction_error`/`improvement` history used by `plot_run_history()`
+  the `prediction_error`/`improvement` history used by `load_metrics()`
   is always recorded, regardless of this flag
 - Renamed `max_evaluations` to `max_iterations` everywhere: the constructor
   parameter, the `config.json`/`results.h5` keys, the `stop_reason` value,

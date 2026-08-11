@@ -221,9 +221,8 @@ A harder example
 ~~~~~~~~~~~~~~~~~
 
 ``(x - 1)**2`` has a single minimum, so the search has little to explore.
-This configuration, the one behind the animation in the README, uses a
-multi-modal objective where the surrogate has to distinguish several local
-minima:
+This configuration uses a multi-modal objective, where the surrogate has to
+distinguish several local minima:
 
 .. code-block:: python
 
@@ -248,6 +247,19 @@ minima:
    run.run()
    run.plot_iterations()
 
+Stepping the slider through that run looks like this:
+
+.. image:: ../assets/plot_iterations_demo.gif
+   :alt: Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum
+   :width: 600
+
+The blue band is the GP's 95 % confidence interval. It is wide wherever the
+objective has not been evaluated and pinches shut around each training
+point, so watching it narrow around ``x = -1.5`` is watching the surrogate
+become certain. Below it, the EI curve peaks where the next evaluation is
+most worth spending, and collapses towards ``ei_threshold`` as that
+certainty grows.
+
 It converges after 17 iterations via ``ei_threshold``, at
 ``best_x = -1.4965``, ``best_y = -0.9413``. The true minimum sits at
 ``x = -1.49593``, so the run lands within ``5.5e-4`` of it after only 18
@@ -255,7 +267,54 @@ objective evaluations: the 2 initial points plus one per evaluated
 iteration. The 17th iteration triggered convergence and was never
 evaluated.
 
-Step 5: the reproducibility record (MRR)
+Fixed hyperparameters (``without_training``) are why each title's second
+line stays constant across the frames; ``with_training`` would show them
+retuned every iteration.
+
+Step 5: check that it converged
+--------------------------------
+
+The slider shows what the surrogate believed at each step. The metrics
+figure shows whether the run as a whole got anywhere:
+
+.. code-block:: python
+
+   run.plot_metrics()
+
+.. image:: ../assets/plot_metrics_demo.png
+   :alt: current_best, improvement, max_ei and prediction_error against iteration
+   :width: 700
+
+Four panels, one per metric, for the same run as the animation above:
+
+``current_best``
+    The lowest objective value found so far. It steps down and then
+    flattens, which is the run finding the minimum and then confirming it.
+
+``improvement``
+    How much each evaluation lowered ``current_best``. It spikes early,
+    then sits at zero once the optimiser is refining rather than
+    discovering. Flat ``improvement`` while ``max_ei`` is still high means
+    the search is exploring, not finished.
+
+``max_ei``
+    The convergence signal, on a log axis. It falls by three orders of
+    magnitude and the run stops when it crosses ``ei_threshold``. A run
+    that has not converged shows this line still comfortably above the
+    threshold.
+
+``prediction_error``
+    ``predicted_y - new_y``: how wrong the surrogate was about the point it
+    just chose. Large and swinging either side of zero early on, then
+    settling towards zero as the surrogate learns the objective.
+
+One panel per metric rather than one shared axes: the four have unrelated
+units and ranges, so overlaying them flattens all but the largest into a
+line along zero. ``max_ei`` is the only one that can take a log axis, since
+``prediction_error`` is signed and ``improvement`` is frequently exactly
+zero. Pass ``log_scale=False`` to make that panel linear too.
+
+Step 6: the reproducibility record (MRR)
 -----------------------------------------
 
 Because ``run_dir`` was given, the run created a timestamped folder under
@@ -273,6 +332,11 @@ Because ``run_dir`` was given, the run created a timestamped folder under
 - ``results.h5``: self-describing HDF5, where configuration is stored as
   attributes alongside the data, so the file can be understood on its own
 
+To browse ``results.h5`` without writing code, the
+`H5Web <https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web>`_
+VS Code extension opens HDF5 files directly in the editor, showing groups,
+attributes, and plots of any dataset.
+
 If the run raises partway through, ``meta.json`` and ``results.h5`` are
 still written as a best-effort checkpoint covering every iteration completed
 before the failure (``stop_reason="crashed"``), and ``run.log`` ends with
@@ -281,35 +345,36 @@ an error line instead of the summary line.
 Revisiting a saved run
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-``plot_run_history`` builds the validation-metrics plot directly from a
-run directory, with no ``OptimisationRun`` object needed, so a past run can
-be revisited at any later time:
+Both figures can be rebuilt from a run directory alone, with no
+``OptimisationRun`` object, so a past run can be revisited at any later
+time. ``load_metrics`` draws the validation metrics:
 
 .. code-block:: python
 
    from pathlib import Path
 
-   from actgpr.plotting import plot_run_history
+   from actgpr.plotting import load_metrics
 
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
-   plot_run_history(run_dir)
+   load_metrics(run_dir)
 
-This plots ``prediction_error``, ``improvement``, and ``max_ei`` against
-iteration: ``prediction_error`` shrinking towards zero shows the surrogate
-learning the blackbox; ``improvement`` flattening shows the optimisation
-converging.
-
-``max_ei`` is drawn on its own right-hand axis with a log scale, the same
-default as ``plot_iterations()``, and for the same reason: EI falls by
-orders of magnitude, so on the shared linear axis it would sit flat against
-zero and its decay towards ``ei_threshold`` would be invisible.
-``prediction_error`` and ``improvement`` stay linear because the first is
-signed and the second is frequently exactly zero, neither of which a log
-axis can display. Pass ``log_scale=False`` to omit the ``max_ei`` axis:
+and ``load_iterations`` opens the same interactive slider as
+``run.plot_iterations()``:
 
 .. code-block:: python
 
-   plot_run_history(run_dir, log_scale=False)
+   from actgpr.plotting import load_iterations
+
+   slider = load_iterations(run_dir)
+
+Assign the slider to a variable that outlives the call. Matplotlib keeps
+only a weak reference to it, so a slider left unassigned is garbage
+collected: it is still drawn, but silently stops responding to drags.
+
+The slider needs the run to have kept snapshots (the default). It raises
+``RuntimeError`` for a run executed with ``store_snapshots=False``, since
+the per-iteration GP arrays were never written. ``load_metrics`` works
+either way, since the validation metrics are always recorded.
 
 For a custom analysis, read the same series directly:
 
@@ -321,26 +386,6 @@ For a custom analysis, read the same series directly:
        iteration = f["history/iteration"][:]
        prediction_error = f["history/prediction_error"][:]
        improvement = f["history/improvement"][:]
-
-That plot summarises the whole run. To revisit the *per-iteration* state
-instead, ``load_snapshots`` rebuilds exactly the snapshots
-``plot_iterations()`` browses in memory, so a finished run's iterations can
-be replotted from disk:
-
-.. code-block:: python
-
-   import matplotlib.pyplot as plt
-
-   from actgpr.plotting import load_snapshots, plot_iteration_snapshot
-
-   snapshots = load_snapshots(run_dir)
-
-   _, axes = plt.subplots(2, 1)
-   plot_iteration_snapshot(snapshots[-1], axes)   # the last iteration
-
-This needs the run to have kept snapshots (the default). It raises
-``RuntimeError`` for a run executed with ``store_snapshots=False``, since
-the per-iteration GP arrays were never written.
 
 Parameter reference
 --------------------
@@ -389,9 +434,9 @@ Shared parameters
        browse them afterward. Set ``False`` to omit them, since they are the
        bulk of ``results.h5``'s size. The
        ``prediction_error``/``improvement`` history used by
-       ``plot_run_history()`` is recorded either way.
+       ``load_metrics()`` is recorded either way.
    * - ``run_dir`` (default None)
-     - If given, writes the MRR record (see Step 5) to a timestamped
+     - If given, writes the MRR record (see Step 6) to a timestamped
        folder under this path. If ``None``, nothing is written to disk.
 
 ``with_training`` only
@@ -422,33 +467,84 @@ Shared parameters
    * - ``outputscale`` (default 1.0)
      - Fixed kernel signal variance, never tuned.
 
-Other plots
------------
+Plotting reference
+------------------
 
-``run.plot_iterations()`` and ``plot_run_history()`` cover the two common
-cases, and ``load_snapshots()`` feeds saved runs back into the first.
-``actgpr.plotting`` also exposes three lower-level functions for building
-your own figures:
+Two figures, each reachable two ways. That is four entry points in total,
+and there is nothing else to learn.
+
+The prefix says where the data comes from. ``plot_`` draws from the run
+object you are still holding, so those two are methods on
+``OptimisationRun``. ``load_`` takes the path to a run's log directory,
+reads its ``results.h5``, and draws the same figure, so those two are
+functions imported from ``actgpr.plotting``.
 
 .. list-table::
    :header-rows: 1
-   :widths: 34 66
+   :widths: 30 35 35
 
-   * - Function
+   * -
+     - The surrogate itself
+     - Validation metrics
+   * - From the run
+     - ``run.plot_iterations()``
+     - ``run.plot_metrics()``
+   * - From the logs
+     - ``load_iterations(run_dir)``
+     - ``load_metrics(run_dir)``
+
+The bottom row needs ``run_dir`` to have been set, since it reads
+``results.h5``; the methods work either way. ``run.run_dir`` holds the
+timestamped directory the run wrote to, so the two functions also work on a
+run you just finished, not only on one from last month.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - Use
      - What it draws
-   * - ``plot_iteration_snapshot(snapshot, axes)``
-     - One iteration's GP and EI panels, onto axes you supply. Use it to
-       export single frames or lay several iterations side by side.
-   * - ``plot_surrogate(surrogate, test_x)``
-     - A fitted surrogate on its own, with no run and no EI panel.
-   * - ``plot_acquisition(candidates, ei_scores)``
-     - The EI landscape on its own, without the GP panel.
-   * - ``plot_gp(candidates, f_mean, f_var, train_x, train_y)``
-     - The lowest level: GP mean, 95 % band, and training data from raw
-       tensors. Every other GP plot delegates to it.
+   * - ``run.plot_iterations()``
+     - **Start here.** An interactive slider over every iteration of a
+       finished run: the GP fit on top, the EI landscape below. Watching the
+       band narrow around the minimum is the clearest picture of what the
+       algorithm did.
+   * - ``run.plot_metrics()``
+     - The whole run as one figure, four panels: ``current_best``,
+       ``improvement``, ``max_ei`` (log-scaled), and ``prediction_error``
+       against iteration. Use it to judge convergence at a glance.
+   * - ``load_iterations(run_dir)``
+     - The slider again, read back from a run's logs. Keep the returned
+       ``Slider`` in a variable or matplotlib will collect it and it will
+       stop responding.
+   * - ``load_metrics(run_dir)``
+     - The four panels again, read back from a run's logs.
 
-The README's plotting section lists all of them together, including which
-default to a log-scaled EI axis.
+Each pair draws the identical figure, so which one to reach for depends
+solely on what you still have to hand.
+
+All four take ``show=False``. Use it whenever you open more than one
+figure: ``plt.show()`` displays *every* open figure, not just the newest,
+so calling it once per figure re-displays the earlier ones, and the first
+window flickers back into view as the last one is closed. Build the figures
+first, then call ``plt.show()`` yourself:
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   slider = load_iterations(run_dir, show=False)
+   load_metrics(run_dir, show=False)
+
+   plt.show()   # once, for both
+
+All four also take ``log_scale=False``: on the slider it makes the EI panel
+linear, on the metrics figure it makes the ``max_ei`` panel linear. Log is the default
+because EI falls by orders of magnitude as a run converges, so on a linear
+axis it sits flat against zero and its decay towards ``ei_threshold`` is
+invisible. The other three metrics stay linear either way, since
+``prediction_error`` is signed and ``improvement`` is frequently exactly
+zero, neither of which a log axis can display.
 
 Where to go next
 ----------------
