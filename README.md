@@ -50,7 +50,7 @@ pip install -e . --no-deps          # the package itself; deps come from the loc
 The usage pattern:
 
 1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. There are two routes, described under [Writing your Objective](#writing-your-objective) below.
-2. **Configure the run.** Beyond the Objective and Surrogate you set `search_bounds` (the closed interval `[lo, hi]` in which the minimum is searched), `initial_train_x` (the points that seed the loop), `max_iterations` (budget cap), `ei_threshold` (early stopping threshold), `noise` (observation noise variance), and optionally `run_dir` (where to write the MRR record). See the parameter tables in the [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) for the full list.
+2. **Configure the run.** Beyond the Objective and Surrogate you set `search_bounds` (the closed interval `[lo, hi]` in which the minimum is searched), `initial_train_x` (the points that seed the loop), `max_iterations` (budget cap), `ei_threshold` (early stopping threshold), `noise` (surrogate observation noise variance), and optionally `run_dir` (where to write the MRR record). See the parameter tables in the [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) for the full list.
 3. **Execute** with `run()`, which returns `best_x` and `best_y` along with the full training data.
 4. **Inspect** the run with `plot_iterations()`.
 
