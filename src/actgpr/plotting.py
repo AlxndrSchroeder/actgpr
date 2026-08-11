@@ -12,10 +12,13 @@ plot_iteration_snapshot
     Draws one iteration's GP + EI side by side from a snapshot dict.
 plot_run_history
     Plots validation metrics vs. iteration from a saved run's results.h5.
-load_snapshots
+draw_run_history
+    Draws that figure from already-loaded series; the shared definition.
+load_iteration_snapshots
     Rebuilds a saved run's per-iteration snapshots from its results.h5.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import h5py
@@ -402,7 +405,7 @@ def plot_iteration_snapshot(
     ei_ax.set_title(f"EI | max: {snapshot['max_ei']:.6f}")
 
 
-def load_snapshots(run_dir: Path | str) -> list[dict]:
+def load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
     """Rebuild a saved run's per-iteration snapshots from its results.h5.
 
     The per-iteration counterpart to ``plot_run_history``: it returns the
@@ -496,6 +499,92 @@ def load_snapshots(run_dir: Path | str) -> list[dict]:
     return snapshots
 
 
+def draw_run_history(
+    iteration: "Sequence[float]",
+    prediction_error: "Sequence[float]",
+    improvement: "Sequence[float]",
+    max_ei: "Sequence[float]",
+    best_x: float,
+    best_y: float,
+    stop_reason: str,
+    fitted_hyperparameters: dict[str, float] | None = None,
+    ax: Axes | None = None,
+    show: bool = True,
+    log_scale: bool = True,
+) -> tuple[Figure, Axes]:
+    """Draw the run-history figure from already-loaded series.
+
+    The single definition of this figure, shared by
+    ``OptimisationRun.plot_history`` (which passes the series it holds in
+    memory) and ``plot_run_history`` (which reads them from a saved
+    ``results.h5``), so the two cannot drift apart.
+
+    Parameters
+    ----------
+    iteration, prediction_error, improvement, max_ei : sequence of float
+        The per-iteration series, all of equal length.
+    best_x, best_y : float
+        The run's outcome, reported in the title.
+    stop_reason : str
+        Which convergence criterion fired, reported in the title.
+    fitted_hyperparameters : dict or None, optional
+        The surrogate's final hyperparameters, added as a second title
+        line when given.
+    ax : matplotlib.axes.Axes or None, optional
+        An existing axes to draw on. If None, a new figure and axes are created.
+    show : bool, optional
+        Whether to call plt.show() immediately, by default True.
+    log_scale : bool, optional
+        If True (the default), ``max_ei`` is drawn on a second y-axis with
+        a log scale. See ``plot_run_history`` for why the other two series
+        stay linear.
+
+    Returns
+    -------
+    tuple[Figure, Axes]
+        The figure and the primary axes.
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    else:
+        fig = ax.get_figure()
+
+    lines = ax.plot(iteration, prediction_error, "o-", label="prediction_error")
+    lines += ax.plot(iteration, improvement, "o-", label="improvement")
+    ax.axhline(0, color="grey", linestyle=":", linewidth=1)
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("value")
+
+    # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
+    # plotting entry points report the run's outcome identically whether it
+    # is read from memory or reconstructed from results.h5.
+    title = (
+        f"Run history | best_x: {best_x:.4f} | "
+        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    )
+    if fitted_hyperparameters:
+        title += "\nfinal " + " | ".join(
+            f"{key}: {value:.4g}" for key, value in fitted_hyperparameters.items()
+        )
+    ax.set_title(title)
+
+    if log_scale:
+        # max_ei spans orders of magnitude while prediction_error and
+        # improvement are linear and signed, so it gets its own log axis
+        # rather than flattening everything onto one scale.
+        ei_ax = ax.twinx()
+        ei_ax.set_yscale("log")
+        lines += ei_ax.plot(iteration, max_ei, "s--", color="green", label="max_ei")
+        ei_ax.set_ylabel("max_ei (log)")
+
+    ax.legend(lines, [line.get_label() for line in lines])
+
+    if show:
+        plt.show()
+
+    return fig, ax
+
+
 def plot_run_history(
     run_dir: Path | str,
     ax: Axes | None = None,
@@ -564,43 +653,16 @@ def plot_run_history(
             if f"fitted_{key}" in f["final"].attrs
         }
 
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    else:
-        fig = ax.get_figure()
-
-    lines = ax.plot(iteration, prediction_error, "o-", label="prediction_error")
-    lines += ax.plot(iteration, improvement, "o-", label="improvement")
-    ax.axhline(0, color="grey", linestyle=":", linewidth=1)
-    ax.set_xlabel("iteration")
-    ax.set_ylabel("value")
-    # Same best_x/best_y labelling as plot_iteration_snapshot, so the two
-    # plotting entry points report the run's outcome identically whether it
-    # is read from memory or reconstructed from results.h5.
-    title = (
-        f"Run history | best_x: {best_x:.4f} | "
-        f"best_y: {best_y:.4f} | stop: {stop_reason}"
+    return draw_run_history(
+        iteration=iteration,
+        prediction_error=prediction_error,
+        improvement=improvement,
+        max_ei=max_ei,
+        best_x=best_x,
+        best_y=best_y,
+        stop_reason=stop_reason,
+        fitted_hyperparameters=fitted,
+        ax=ax,
+        show=show,
+        log_scale=log_scale,
     )
-    # Second line mirrors plot_iteration_snapshot's, except these are the
-    # values the run ended on rather than one iteration's.
-    if fitted:
-        title += "\nfinal " + " | ".join(
-            f"{key}: {value:.4g}" for key, value in fitted.items()
-        )
-    ax.set_title(title)
-
-    if log_scale:
-        # max_ei spans orders of magnitude while prediction_error and
-        # improvement are linear and signed, so it gets its own log axis
-        # rather than flattening everything onto one scale.
-        ei_ax = ax.twinx()
-        ei_ax.set_yscale("log")
-        lines += ei_ax.plot(iteration, max_ei, "s--", color="green", label="max_ei")
-        ei_ax.set_ylabel("max_ei (log)")
-
-    ax.legend(lines, [line.get_label() for line in lines])
-
-    if show:
-        plt.show()
-
-    return fig, ax
