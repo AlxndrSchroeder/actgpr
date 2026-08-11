@@ -1,8 +1,31 @@
-"""Objective function module for active GPR optimisation."""
+"""Objective function module for active GPR optimisation.
 
-from typing import Callable
+Defines the Objective interface actgpr optimises against, and ObjectiveFn,
+the convenience wrapper for plain callables.
+"""
+
+from typing import Callable, Protocol
 
 import torch
+
+
+class Objective(Protocol):
+    """Anything actgpr can minimise: an object with an ``evaluate`` method.
+
+    This is a :class:`typing.Protocol`, so conformance is *structural*:
+    any object providing a matching ``evaluate`` satisfies it, with no base
+    class to inherit and no registration step. ``OptimisationRun`` never
+    inspects the type of the objective it is given, only calls this method,
+    so wrapping a simulation of your own means writing a class with this
+    one method on it.
+
+    ``ObjectiveFn`` below satisfies this protocol and is the convenient
+    route for a plain function; it is not the only permitted Objective.
+    """
+
+    def evaluate(self, *args: float) -> tuple[float, ...]:
+        """Evaluate the Objective at one or more input points."""
+        ...
 
 
 def _default_func(x: float) -> float:
