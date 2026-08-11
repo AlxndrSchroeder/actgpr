@@ -328,7 +328,7 @@ For a custom analysis, read the same series directly:
        improvement = f["history/improvement"][:]
 
 That plot summarises the whole run. To revisit the *per-iteration* state
-instead, ``load_snapshots`` rebuilds exactly the snapshots
+instead, ``load_iteration_snapshots`` rebuilds exactly the snapshots
 ``plot_iterations()`` browses in memory, so a finished run's iterations can
 be replotted from disk:
 
@@ -336,9 +336,9 @@ be replotted from disk:
 
    import matplotlib.pyplot as plt
 
-   from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+   from actgpr.plotting import load_iteration_snapshots, plot_iteration_snapshot
 
-   snapshots = load_snapshots(run_dir)
+   snapshots = load_iteration_snapshots(run_dir)
 
    _, axes = plt.subplots(2, 1)
    plot_iteration_snapshot(snapshots[-1], axes)   # the last iteration
@@ -448,13 +448,15 @@ from last month:
      - Validation metrics
    * - From a run in memory
      - ``run.plot_iterations()``
-     - ``plot_run_history(run.run_dir)``
+     - ``run.plot_history()``
    * - From a saved run
-     - ``load_snapshots(run_dir)`` then ``plot_iteration_snapshot``
+     - ``load_iteration_snapshots(run_dir)`` then ``plot_iteration_snapshot``
      - ``plot_run_history(run_dir)``
 
-Both disk-based routes need ``run_dir`` to have been set, since they read
-``results.h5``.
+The bottom row needs ``run_dir`` to have been set, since it reads
+``results.h5``; the methods work either way. ``run.run_dir`` holds the
+timestamped directory the run wrote to, so the disk-based routes also work
+on a run you just finished.
 
 .. list-table::
    :header-rows: 1
@@ -471,7 +473,10 @@ Both disk-based routes need ``run_dir`` to have been set, since they read
        and ``max_ei`` vs. iteration, read from a run directory. Use it to
        judge convergence at a glance, or to revisit a run you no longer
        have an object for.
-   * - ``load_snapshots(run_dir)``
+   * - ``run.plot_history()``
+     - The same figure as ``plot_run_history``, drawn from the run object
+       you still hold. Works for a run that wrote no MRR record.
+   * - ``load_iteration_snapshots(run_dir)``
      - Not a plot. Rebuilds a saved run's per-iteration snapshots so they
        can be fed to ``plot_iteration_snapshot`` without an
        ``OptimisationRun``.

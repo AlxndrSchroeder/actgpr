@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `OptimisationRun.plot_history()` plots a run's validation metrics from
+  the object you still hold, the in-memory counterpart to
+  `plot_run_history()`. The series were previously reachable only by
+  reading `results.h5`, so a run without `run_dir` had no route to them at
+  all. Both delegate to `plotting.draw_run_history`, so the figure has one
+  definition
+
 - Conda is now a supported install path alongside Poetry: `environment.yml`
   declares the conda dependency spec and `conda-lock.yml` pins it, solved
   separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`. A new
@@ -80,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` for lengthscale/outputscale and only the *starting* noise. Read
   via an optional `hyperparameters()` method on the surrogate, so a
   backend without one is unaffected
-- `plotting.load_snapshots(run_dir)` rebuilds a saved run's per-iteration
+- `plotting.load_iteration_snapshots(run_dir)` (named to pair with
+  `plot_iterations` and `plot_iteration_snapshot`) rebuilds a saved run's per-iteration
   GP/EI snapshots from its `results.h5`, the per-iteration counterpart to
   `plot_run_history()`. Previously only `OptimisationRun` could produce
   them, so anything replotting a finished run had to reassemble the

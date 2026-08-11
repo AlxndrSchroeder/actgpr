@@ -132,7 +132,7 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
 
-`plot_run_history(run.run_dir)` summarises the same run as three series against iteration:
+`run.plot_history()` summarises the same run as three series against iteration:
 
 <img src="assets/run_history_demo.png" width="620" alt="prediction_error, improvement and max_ei against iteration for the same run">
 
@@ -248,18 +248,18 @@ from actgpr.plotting import plot_run_history
 plot_run_history("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
 ```
 
-For the per-iteration state rather than the summary, `load_snapshots(run_dir)` rebuilds the same snapshots `plot_iterations()` browses in memory, so a finished run's iterations can be replotted from disk (requires the run to have kept snapshots):
+For the per-iteration state rather than the summary, `load_iteration_snapshots(run_dir)` rebuilds the same snapshots `plot_iterations()` browses in memory, so a finished run's iterations can be replotted from disk (requires the run to have kept snapshots):
 
 ```python
-from actgpr.plotting import load_snapshots, plot_iteration_snapshot
+from actgpr.plotting import load_iteration_snapshots, plot_iteration_snapshot
 
-snapshots = load_snapshots(run_dir)
+snapshots = load_iteration_snapshots(run_dir)
 plot_iteration_snapshot(snapshots[-1], axes)
 ```
 
 ## Plotting
 
-`run.plot_iterations()` is the usual entry point, and `plot_run_history(run_dir)` summarises a finished run. `actgpr.plotting` also provides `load_snapshots`, `plot_iteration_snapshot`, `plot_surrogate`, `plot_acquisition`, and `plot_gp` for building your own figures. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) lists what each one draws and when to use it.
+`run.plot_iterations()` and `run.plot_history()` are the usual entry points for a run you still hold; `plot_run_history(run_dir)` does the same summary for a saved one. `actgpr.plotting` also provides `load_iteration_snapshots`, `plot_iteration_snapshot`, `plot_surrogate`, `plot_acquisition`, and `plot_gp` for building your own figures. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) lists what each one draws and when to use it.
 
 ## Vocabulary
 
@@ -345,7 +345,7 @@ Computed every iteration and recorded in `run.log`, `results.h5` (`/history`), a
 | **Run directory** | The timestamped folder under `run_dir` holding all MRR artifacts of a single run. |
 | **Self-describing HDF5** | Configuration is stored as HDF5 attributes alongside the data, so `results.h5` can be understood without any other file. |
 | **`plot_run_history()`** | Builds the `prediction_error`/`improvement`/`max_ei` plot from a run directory's `results.h5` alone, with no `OptimisationRun` object needed. |
-| **`load_snapshots()`** | Rebuilds a saved run's per-iteration GP/EI snapshots from its `results.h5`, so they can be replotted without an `OptimisationRun` object. |
+| **`load_iteration_snapshots()`** | Rebuilds a saved run's per-iteration GP/EI snapshots from its `results.h5`, so they can be replotted without an `OptimisationRun` object. |
 
 ## Development
 
