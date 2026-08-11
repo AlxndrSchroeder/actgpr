@@ -91,123 +91,28 @@ run.plot_iterations()
 
 Expected output: `best_x` close to `1.0` and `best_y` close to `0.0` (the minimum of `(x − 1)²`). The result dict also contains `train_x`, `train_y`, `n_iterations`, and `stop_reason`.
 
-`run.plot_iterations()` opens an interactive slider over the run: the GP fit
-(top, with training data and 95% CI) and the EI landscape (bottom) that
-picked each next point, converging on the minimum as EI shrinks.
-
 ### Example output
 
-Example animation for a run on the function `sin(x) + x²/40` over
-`[-16, 16]`. A harder objective with multiple local minima.
+`run.plot_iterations()` opens an interactive slider over a finished run: the GP fit on top, the EI landscape that picked each next point below. Here on `sin(x) + x²/40` over `[-16, 16]`, a harder objective with several local minima:
 
 <img src="assets/plot_iterations_demo.gif" width="500" alt="Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum">
 
-The exact configuration behind it:
+The blue band is the GP's 95% confidence interval, wide where the objective has not been evaluated and pinched shut at each training point. Watching it narrow around `x = -1.5` is watching the surrogate become certain. It converges after 17 iterations via `ei_threshold` at `best_x = -1.4965`, within `5.5e-4` of the true minimum, after 18 evaluations.
 
-```python
-import math
-
-import matplotlib.pyplot as plt
-
-from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
-
-objective = ObjectiveFn(lambda x: math.sin(x) + (x**2) / 40)
-
-run = OptimisationRun.without_training(
-    objective=objective,
-    surrogate=GPyTorchSurrogate(),
-    search_bounds=(-16.0, 16.0),
-    initial_train_x=[-8.0, 8.0],
-    max_iterations=20,
-    ei_threshold=0.002,
-    n_candidates=500,
-    lengthscale=2.0,
-    outputscale=1.0,
-    noise=2e-4,
-)
-run.run()
-
-run.plot_iterations(show=False)   # the animation above
-run.plot_metrics(show=False)      # the four panels below
-
-plt.show()   # opens both windows at once
-```
-
-It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
-`best_y = -0.9413`. Fixed hyperparameters (`without_training`) are why the
-GIF's second title line stays constant across frames; `with_training` would
-show them retuned every iteration.
-
-The second call summarises the same run as four metrics against iteration, one panel each:
+`run.plot_metrics()` summarises the same run as four metrics against iteration:
 
 <img src="assets/plot_metrics_demo.png" width="700" alt="current_best, improvement, max_ei and prediction_error against iteration for the same run">
 
-- **`current_best`** is the lowest objective value found so far. It steps down and then flattens, which is the run finding the minimum and then confirming it.
-- **`improvement`** is how much each evaluation lowered `current_best`. It spikes early, then sits at zero once the optimiser is refining rather than discovering. Flat `improvement` while `max_ei` is still high means the search is exploring, not finished.
-- **`max_ei`** (log axis) is the convergence signal. It falls by three orders of magnitude and the run stops when it crosses `ei_threshold`. A run that has not converged shows this line still comfortably above the threshold.
-- **`prediction_error`** is `predicted_y - new_y`: how wrong the surrogate was about the point it just chose. Large and swinging either side of zero early on, then settling towards zero as the surrogate learns the objective. It is signed, which is why it cannot share the log axis.
-
-One panel per metric rather than one shared axes: the four have unrelated units and ranges, so overlaying them flattens all but the largest into a line along zero.
+`current_best` steps down then flattens as the minimum is found and confirmed; `max_ei` falls three orders of magnitude until it crosses `ei_threshold` and stops the run. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) gives the exact configuration behind both figures and reads each panel in detail.
 
 ### Writing your Objective
 
-`actgpr` never inspects the type of your Objective. It only ever calls `.evaluate(...)`, so the interface is a single method and there is no base class to inherit and nothing to register. This is deliberate: it is what lets you plug in a simulation of your own without adapting it to `actgpr`. The interface is declared as a `typing.Protocol` (`actgpr.objective_fn.Objective`), so type checkers accept your class too.
+`actgpr` never inspects the type of your Objective. It only ever calls `.evaluate(...)`, so there is no base class to inherit and nothing to register. That is what lets you plug in a simulation of your own without adapting it to `actgpr`.
 
-**Route A: a plain function.** Wrap it in `ObjectiveFn`, as in the example above:
+- **A plain function?** Wrap it in `ObjectiveFn`, as in the quick start above. Pass `jitter=` to simulate a noisy instrument.
+- **Your own simulation,** with setup, configuration, or state? Write a class exposing `evaluate(*x: float) -> tuple[float, ...]` and pass it directly. Do *not* wrap it in `ObjectiveFn`.
 
-```python
-objective = ObjectiveFn(lambda x: (x - 1) ** 2)
-```
-
-**Route B: your own simulation.** Write your own class exposing `evaluate()`. Do *not* wrap it in `ObjectiveFn`. Use this whenever there is setup, configuration, or state involved:
-
-```python
-class MySimulation:
-    def __init__(self, config):
-        self.config = config          # solver settings, mesh, fixed parameters
-
-    def evaluate(self, *x: float) -> tuple[float, ...]:
-        return tuple(self._solve(v) for v in x)
-
-    def _solve(self, x: float) -> float:
-        ...                           # run your simulation at x, return its output
-
-
-run = OptimisationRun.with_training(objective=MySimulation(config), ...)
-```
-
-`OptimisationRun` treats both identically. `config.json` records whichever you used via its `repr()`, so the MRR record still identifies the Objective.
-
-**Simulating a noisy experiment:** a real instrument's readings are noisy, an analytic function is not. Pass `jitter` to add Gaussian noise to each evaluation, and set the surrogate's `noise` to match (`jitter` is a standard deviation, `noise` a variance):
-
-```python
-objective = ObjectiveFn(my_blackbox, jitter=0.1)   # seeded, so runs stay reproducible
-run = OptimisationRun.with_training(..., noise=0.1**2)
-```
-
-**Fit modes:** the two constructors select how GP hyperparameters are handled.
-
-- `OptimisationRun.with_training(...)` re-tunes lengthscale, outputscale, and noise at every iteration using [Adam](https://arxiv.org/abs/1412.6980) (`torch.optim.Adam`), a gradient descent variant with momentum and per-parameter step sizes: over `training_iter` steps it adjusts the hyperparameters to maximise the marginal log likelihood, meaning how plausible the observed training data is under a GP with those hyperparameters. Adam only fits the surrogate; it never evaluates the blackbox. Use this mode when you do not know good hyperparameters, which is the usual case.
-- `OptimisationRun.without_training(...)` keeps hyperparameters fixed at exactly the values you pass; nothing is tuned. Use this for controlled comparisons or when good values are already known:
-
-```python
-run = OptimisationRun.without_training(
-    objective=objective,            # the wrapped blackbox to minimise
-    surrogate=GPyTorchSurrogate(),  # the GP model that approximates it
-    search_bounds=(-3.0, 5.0),      # interval in which the minimum is searched
-    initial_train_x=[-3.0, 5.0],    # points where we start looking for the minimum
-    max_iterations=20,              # budget: max optimisation iterations
-    ei_threshold=0.001,             # stop early once max EI drops below this
-    lengthscale=1.0,                # RBF kernel lengthscale (fixed)
-    outputscale=1.0,                # kernel signal variance (fixed)
-    noise=1e-4,                     # observation-noise variance (fixed)
-)
-result = run.run()
-```
-
-Every iteration's GP and EI state is kept by default (`store_snapshots=True`), so `run.plot_iterations()` can browse them afterwards. Pass `store_snapshots=False` to skip them, since they are the bulk of `results.h5`'s size. The validation metrics shown by `load_metrics()` are recorded either way, regardless of this flag.
-
-EI often shrinks by orders of magnitude as a run converges, enough to look like a flat line at zero on a linear axis. `plot_iterations()` therefore draws the EI axis on a log scale by default, with `ei_threshold` as a reference line so you can see the EI curve cross into converged territory. Pass `log_scale=False` for a linear axis.
+`OptimisationRun` treats both identically, and `config.json` records whichever you used via its `repr()`. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) has a worked example of each, plus the two fit modes (`with_training` retunes the GP hyperparameters every iteration; `without_training` holds them fixed) and the full parameter reference.
 
 ## Run outputs (MRR)
 
