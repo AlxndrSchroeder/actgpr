@@ -11,7 +11,7 @@ from actgpr.objective_fn import ObjectiveFn
 from actgpr.run import OptimisationRun
 from actgpr.surrogate import GPyTorchSurrogate
 from actgpr.plotting import (
-    load_snapshots,
+    load_iteration_snapshots,
     plot_acquisition,
     plot_iteration_snapshot,
     plot_run_history,
@@ -475,7 +475,7 @@ class TestLoadSnapshots:
     def test_raises_when_no_results_h5(self, tmp_path: Path) -> None:
         """Test the same clear error plot_run_history gives."""
         with pytest.raises(FileNotFoundError, match="results.h5"):
-            load_snapshots(tmp_path)
+            load_iteration_snapshots(tmp_path)
 
     def test_raises_when_run_stored_no_snapshots(self, tmp_path: Path) -> None:
         """Test that a run without store_snapshots says so, rather than KeyError."""
@@ -503,7 +503,7 @@ class TestLoadSnapshots:
         )
 
         with pytest.raises(RuntimeError, match="store_snapshots"):
-            load_snapshots(tmp_path)
+            load_iteration_snapshots(tmp_path)
 
     def test_round_trips_the_in_memory_snapshots(self, tmp_path: Path) -> None:
         """Test that what comes back matches what the run held in memory.
@@ -528,7 +528,7 @@ class TestLoadSnapshots:
         run.run()
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = load_iteration_snapshots(run_dir)
         in_memory = [r for r in run._results if "candidates" in r]
 
         assert len(loaded) == len(in_memory)
@@ -560,7 +560,7 @@ class TestLoadSnapshots:
         assert result["stop_reason"] == "ei_threshold"
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = load_iteration_snapshots(run_dir)
 
         # The converged frame is last and carries no evaluation metrics.
         converged = loaded[-1]
@@ -585,7 +585,7 @@ class TestLoadSnapshots:
         run.run()
 
         (run_dir,) = list(tmp_path.iterdir())
-        loaded = load_snapshots(run_dir)
+        loaded = load_iteration_snapshots(run_dir)
 
         _, (gp_ax, ei_ax) = plt.subplots(2, 1)
         plot_iteration_snapshot(loaded[-1], (gp_ax, ei_ax))

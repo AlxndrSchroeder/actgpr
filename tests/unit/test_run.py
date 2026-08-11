@@ -228,6 +228,104 @@ class TestRunDirectory:
         assert run.run_dir is None
 
 
+class TestPlotHistory:
+    """Tests for OptimisationRun.plot_history."""
+
+    def test_raises_before_the_run(self) -> None:
+        """Test that plotting a history that does not exist yet is an error."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+
+        with pytest.raises(RuntimeError, match="No history available"):
+            run.plot_history(show=False)
+
+    def test_works_without_a_run_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that a run writing no MRR record can still plot its metrics.
+
+        The series live in memory either way; before this method they were
+        only reachable by reading results.h5, so a run without run_dir had
+        no route to them at all.
+        """
+        import matplotlib.pyplot as plt
+
+        monkeypatch.setattr(plt, "show", lambda: None)
+
+        torch.manual_seed(SEED)
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=4,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        result = run.run()
+
+        assert run.run_dir is None
+        _, ax = run.plot_history(show=False)
+
+        assert f"best_x: {result['best_x']:.4f}" in ax.get_title()
+        assert result["stop_reason"] in ax.get_title()
+
+    def test_matches_the_plot_read_back_from_disk(self, tmp_path: Path) -> None:
+        """Test that the in-memory and on-disk histories draw the same figure.
+
+        Both delegate to plotting.draw_run_history, so this guards the
+        single definition of the figure against the two callers drifting.
+        """
+        from actgpr.plotting import plot_run_history
+
+        torch.manual_seed(SEED)
+        run = OptimisationRun.with_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=4,
+            ei_threshold=1e-9,
+            n_candidates=40,
+            training_iter=5,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        _, from_memory = run.plot_history(show=False)
+        _, from_disk = plot_run_history(run.run_dir, show=False)
+
+        assert from_memory.get_title() == from_disk.get_title()
+        for memory_line, disk_line in zip(
+            from_memory.get_lines(), from_disk.get_lines()
+        ):
+            assert memory_line.get_label() == disk_line.get_label()
+            assert list(memory_line.get_ydata()) == list(disk_line.get_ydata())
+
+    def test_log_scale_false_omits_the_ei_axis(self, tmp_path: Path) -> None:
+        """Test that opting out drops the max_ei twin axis, as on disk."""
+        torch.manual_seed(SEED)
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-2.0, 2.0],
+            max_iterations=3,
+            ei_threshold=1e-9,
+            n_candidates=40,
+        )
+        run.run()
+
+        fig, ax = run.plot_history(show=False, log_scale=False)
+
+        assert fig.axes == [ax]
+
+
 class TestCustomObjective:
     """Tests that an Objective need not be an ObjectiveFn."""
 
