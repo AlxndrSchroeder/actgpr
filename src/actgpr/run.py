@@ -16,7 +16,7 @@ from matplotlib.widgets import Slider
 
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
-from actgpr.objective_fn import ObjectiveFn
+from actgpr.objective_fn import Objective
 from actgpr.plotting import EI_LOG_FLOOR_MARGIN, plot_iteration_snapshot
 from actgpr.surrogate import GPyTorchSurrogate
 
@@ -51,7 +51,7 @@ class OptimisationRun:
 
     def __init__(
         self,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -74,8 +74,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -169,10 +172,15 @@ class OptimisationRun:
         # in _run_loop(), only when store_snapshots is True.
         self._convergence_snapshot: dict | None = None
 
+        # The timestamped directory run() actually wrote to, set once the
+        # run starts. run_dir above is only the base path, so without this
+        # the caller cannot find its own MRR record afterwards.
+        self.run_dir: Path | None = None
+
     @classmethod
     def with_training(
         cls,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -191,8 +199,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -242,7 +253,7 @@ class OptimisationRun:
     @classmethod
     def without_training(
         cls,
-        objective: ObjectiveFn,
+        objective: Objective,
         surrogate: GPyTorchSurrogate,
         search_bounds: tuple[float, float],
         initial_train_x: torch.Tensor | list[float],
@@ -262,8 +273,11 @@ class OptimisationRun:
 
         Parameters
         ----------
-        objective : ObjectiveFn
-            The objective function to minimise.
+        objective : Objective
+            The Objective to minimise: any object exposing
+            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            checked, only that method is called, so a class of your own
+            wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
         search_bounds : tuple[float, float]
@@ -476,6 +490,7 @@ class OptimisationRun:
                     self._outputscale if not self._train_hyperparameters else None
                 ),
             )
+            self.run_dir = actual_run_dir
             mrr.write_config(actual_run_dir, self._config_dict())
             mrr.write_manifest(actual_run_dir)
             file_handler = mrr.setup_file_logger(actual_run_dir)
