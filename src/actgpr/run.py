@@ -12,12 +12,18 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
-from actgpr.plotting import EI_LOG_FLOOR_MARGIN, plot_iteration_snapshot
+from actgpr.plotting import (
+    EI_LOG_FLOOR_MARGIN,
+    draw_run_history,
+    plot_iteration_snapshot,
+)
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -45,6 +51,8 @@ class OptimisationRun:
         Execute the optimisation loop and return the results.
     plot_iterations()
         Open an interactive matplotlib slider to browse GP snapshots per iteration.
+    plot_history()
+        Plot this run's validation metrics against iteration.
     """
 
     # TODO: add from_config() classmethod to construct from config.json
@@ -171,6 +179,9 @@ class OptimisationRun:
         # has no place in _results/history, so this is its only record. Set
         # in _run_loop(), only when store_snapshots is True.
         self._convergence_snapshot: dict | None = None
+
+        # The convergence criterion that ended the run, for plot_history.
+        self._stop_reason: str = "not run"
 
         # The timestamped directory run() actually wrote to, set once the
         # run starts. run_dir above is only the base path, so without this
@@ -507,6 +518,7 @@ class OptimisationRun:
             )
 
             stop_reason, n_iterations = self._run_loop(logger)
+            self._stop_reason = stop_reason
 
             best_idx = torch.argmin(self.train_y)
             best_x = self.train_x[best_idx].item()
@@ -692,6 +704,62 @@ class OptimisationRun:
             )
 
         return stop_reason, n_iterations
+
+    def plot_history(
+        self,
+        ax: Axes | None = None,
+        show: bool = True,
+        log_scale: bool = True,
+    ) -> tuple[Figure, Axes]:
+        """Plot this run's validation metrics against iteration.
+
+        The in-memory counterpart to ``plotting.plot_run_history``, which
+        reads the same series from a saved ``results.h5``. Both draw the
+        identical figure via ``plotting.draw_run_history``. Use this one
+        while the run object is still to hand, including for a run that
+        wrote no MRR record and therefore has no directory to read back.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes or None, optional
+            An existing axes to draw on. If None, a new figure and axes are
+            created.
+        show : bool, optional
+            Whether to call plt.show() immediately, by default True.
+        log_scale : bool, optional
+            If True (the default), ``max_ei`` is drawn on a second y-axis
+            with a log scale.
+
+        Returns
+        -------
+        tuple[Figure, Axes]
+            The figure and the primary axes.
+
+        Raises
+        ------
+        RuntimeError
+            If the run has not been executed yet, so there is no history.
+        """
+        if not self._results:
+            raise RuntimeError(
+                "No history available. Call run() before plot_history()."
+            )
+
+        best_index = torch.argmin(self.train_y)
+
+        return draw_run_history(
+            iteration=[record["iteration"] for record in self._results],
+            prediction_error=[record["prediction_error"] for record in self._results],
+            improvement=[record["improvement"] for record in self._results],
+            max_ei=[record["max_ei"] for record in self._results],
+            best_x=self.train_x[best_index].item(),
+            best_y=self.train_y[best_index].item(),
+            stop_reason=self._stop_reason,
+            fitted_hyperparameters=self._fitted_hyperparameters(),
+            ax=ax,
+            show=show,
+            log_scale=log_scale,
+        )
 
     def plot_iterations(self, log_scale: bool = True) -> None:
         """Open an interactive matplotlib figure to browse iterations.
