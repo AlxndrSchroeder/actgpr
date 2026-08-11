@@ -683,6 +683,28 @@ class TestPlotRunIterations:
         assert isinstance(slider, Slider)
         assert calls == []
 
+    def test_the_two_figures_get_distinct_window_titles(
+        self, saved_run: tuple[Path, OptimisationRun], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that both figures name their window.
+
+        Matplotlib titles windows "Figure 1"/"Figure 2" and opens them at
+        the same position, so with both on screen neither the title bar nor
+        the window switcher says which is which.
+        """
+        monkeypatch.setattr(plt, "show", lambda: None)
+        run_dir, _ = saved_run
+
+        load_iterations(run_dir, show=False)
+        iterations_title = plt.gcf().canvas.manager.get_window_title()
+
+        load_metrics(run_dir, show=False)
+        metrics_title = plt.gcf().canvas.manager.get_window_title()
+
+        assert "iterations" in iterations_title
+        assert "metrics" in metrics_title
+        assert iterations_title != metrics_title
+
     def test_raises_without_snapshots(self, tmp_path: Path) -> None:
         """Test that a run stored without snapshots gives the clear error."""
         mrr.save_hdf5(

@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Both figures now title their window (`actgpr: iterations (GP fit and EI)`
+  and `actgpr: validation metrics`). Matplotlib names windows `Figure 1`
+  and `Figure 2` and opens them at the same default position, so with both
+  on screen the second covers the first and neither the title bar nor the
+  window switcher says which is which
+
 - `OptimisationRun.plot_iterations()` gained `show=False`, which the other
   three entry points already had, so all four can now defer `plt.show()`.
   Without it, opening the slider and the metrics figure from one script

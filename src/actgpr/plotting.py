@@ -48,6 +48,19 @@ EI_LOG_FLOOR_DEFAULT = 1e-8
 HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
 
 
+def _name_window(fig: Figure, title: str) -> None:
+    """Title a figure's window so several open at once stay tellable apart.
+
+    Matplotlib names windows "Figure 1", "Figure 2", and opens them all at
+    the same default position, so the two actgpr figures land on top of one
+    another and neither the title bar nor the window switcher says which is
+    which.
+    """
+    manager = fig.canvas.manager
+    if manager is not None:
+        manager.set_window_title(title)
+
+
 def _plot_gp(
     candidates: torch.Tensor,
     f_mean: torch.Tensor,
@@ -511,6 +524,7 @@ def _draw_iteration_slider(
         threshold_line = None
 
     fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
+    _name_window(fig, "actgpr: iterations (GP fit and EI)")
     plt.subplots_adjust(bottom=0.18, hspace=0.35)
 
     def _draw(index: int) -> None:
@@ -650,6 +664,7 @@ def _draw_metrics(
         The figure and its 2x2 array of axes.
     """
     fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    _name_window(fig, "actgpr: validation metrics")
 
     for ax, field in zip(axes.flatten(), METRIC_FIELDS):
         ax.plot(iteration, series[field], "o-", color="tab:blue")
