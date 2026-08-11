@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: "Schröder"
     given-names: "Alexander"
-version: 0.2.0
-date-released: "2026-07-28"
+version: 0.3.0
+date-released: "2026-08-11"
 license: MIT
 repository-code: "https://github.com/AlxndrSchroeder/actgpr"
 keywords:
