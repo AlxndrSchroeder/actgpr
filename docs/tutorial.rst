@@ -273,6 +273,11 @@ Because ``run_dir`` was given, the run created a timestamped folder under
 - ``results.h5``: self-describing HDF5, where configuration is stored as
   attributes alongside the data, so the file can be understood on its own
 
+To browse ``results.h5`` without writing code, the
+`H5Web <https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web>`_
+VS Code extension opens HDF5 files directly in the editor, showing groups,
+attributes, and plots of any dataset.
+
 If the run raises partway through, ``meta.json`` and ``results.h5`` are
 still written as a best-effort checkpoint covering every iteration completed
 before the failure (``stop_reason="crashed"``), and ``run.log`` ends with
@@ -422,33 +427,57 @@ Shared parameters
    * - ``outputscale`` (default 1.0)
      - Fixed kernel signal variance, never tuned.
 
-Other plots
------------
+Plotting reference
+------------------
 
-``run.plot_iterations()`` and ``plot_run_history()`` cover the two common
-cases, and ``load_snapshots()`` feeds saved runs back into the first.
-``actgpr.plotting`` also exposes three lower-level functions for building
-your own figures:
+``run.plot_iterations()`` covers the common case. Everything else lives in
+``actgpr.plotting`` and is imported from there, since the package itself
+exports only the four core classes.
 
 .. list-table::
    :header-rows: 1
-   :widths: 34 66
+   :widths: 38 62
 
-   * - Function
+   * - Use
      - What it draws
+   * - ``run.plot_iterations()``
+     - **Start here.** Interactive slider over every iteration of a
+       finished run: GP fit on top, EI landscape below. A method on
+       ``OptimisationRun``, not in ``actgpr.plotting``.
+   * - ``plot_run_history(run_dir)``
+     - The whole run as one figure: ``prediction_error``, ``improvement``,
+       and ``max_ei`` vs. iteration, read from a run directory. Use it to
+       judge convergence at a glance, or to revisit a run you no longer
+       have an object for.
+   * - ``load_snapshots(run_dir)``
+     - Not a plot. Rebuilds a saved run's per-iteration snapshots so they
+       can be fed to ``plot_iteration_snapshot`` without an
+       ``OptimisationRun``.
    * - ``plot_iteration_snapshot(snapshot, axes)``
-     - One iteration's GP and EI panels, onto axes you supply. Use it to
-       export single frames or lay several iterations side by side.
+     - One iteration's GP and EI pair, onto axes you supply. Use it to
+       export single frames, build animations, or lay several iterations
+       side by side.
    * - ``plot_surrogate(surrogate, test_x)``
-     - A fitted surrogate on its own, with no run and no EI panel.
+     - A fitted surrogate on its own, with no run and no EI panel. Use it
+       to inspect a ``GPyTorchSurrogate`` you fitted yourself.
    * - ``plot_acquisition(candidates, ei_scores)``
      - The EI landscape on its own, without the GP panel.
    * - ``plot_gp(candidates, f_mean, f_var, train_x, train_y)``
-     - The lowest level: GP mean, 95 % band, and training data from raw
-       tensors. Every other GP plot delegates to it.
+     - The lowest level: GP mean, 95 % band, and training data straight
+       from tensors. Every other GP plot delegates to it.
 
-The README's plotting section lists all of them together, including which
-default to a log-scaled EI axis.
+``plot_gp``, ``plot_surrogate``, ``plot_acquisition``, and
+``plot_run_history`` all take ``ax=`` to draw onto an existing axes and
+``show=False`` to defer ``plt.show()``, so they compose into multi-panel
+layouts. ``plot_iteration_snapshot`` takes an ``axes`` pair instead and
+never calls ``plt.show()`` itself, since it fills two panels at once.
+
+Log-scaling the EI axis is the default only on the two entry points meant
+to be called directly, ``run.plot_iterations()`` and
+``plot_run_history()``. The lower-level ``plot_acquisition`` and
+``plot_iteration_snapshot`` default to linear (``log_scale=False`` and
+``ei_log_scale=False``), since they are usually driven by code that sets
+the axis range explicitly.
 
 Where to go next
 ----------------

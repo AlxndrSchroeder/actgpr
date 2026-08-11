@@ -23,9 +23,9 @@ The Gaussian Process surrogate is built on [GPyTorch](https://gpytorch.ai/); the
 
 Requires Python ≥ 3.13. Pick whichever ecosystem you already use.
 
-> **Planned:** publishing `actgpr` to PyPI, so that installing becomes `pip install actgpr` and you can `import actgpr` from any project without cloning this repository. Until then, use one of the two paths below.
+> **Planned:** publishing `actgpr` to PyPI. Until then, use one of the two paths below.
 
-**With Poetry** (needs [Poetry](https://python-poetry.org/) ≥ 2.0, because the project uses the PEP 621 `pyproject.toml` format that Poetry 1.x cannot read). Versions are pinned in `poetry.lock`:
+**With [Poetry](https://python-poetry.org/)** (≥ 2.0). Versions are pinned in `poetry.lock`:
 
 ```bash
 git clone https://github.com/AlxndrSchroeder/actgpr.git
@@ -33,7 +33,7 @@ cd actgpr
 poetry install
 ```
 
-**With conda** (needs [conda-lock](https://github.com/conda/conda-lock)). Versions are pinned in `conda-lock.yml`, solved separately for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`:
+**With [conda-lock](https://github.com/conda/conda-lock)**. Versions are pinned in `conda-lock.yml`, solved for `linux-64`, `osx-64`, `osx-arm64`, and `win-64`:
 
 ```bash
 git clone https://github.com/AlxndrSchroeder/actgpr.git
@@ -43,16 +43,13 @@ conda activate actgpr
 pip install -e . --no-deps          # the package itself; deps come from the lock file
 ```
 
-`environment.yml` holds the conda *ranges* (the input to conda-lock) and
-`pyproject.toml` the Poetry ones; `conda-lock.yml` and `poetry.lock` hold
-the respective *resolved* versions. Install from the lock files, not the
-range files, for a reproducible environment.
+`environment.yml` and `pyproject.toml` hold version *ranges*; `conda-lock.yml` and `poetry.lock` hold the *resolved* versions. Install from the lock files.
 
 ## Quick start
 
 The usage pattern:
 
-1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation it is usually more natural to write your own class with an `evaluate()` method instead, since `actgpr` never checks the type, only that the method exists.
+1. **Give it an Objective.** Anything exposing `.evaluate(*x: float) -> tuple[float, ...]`. `ObjectiveFn(func)` wraps a plain function for you; for a real simulation, write your own class with an `evaluate()` method instead. `actgpr` never checks the type, only that the method exists.
 2. **Configure the run.** Beyond the Objective and Surrogate you set `search_bounds` (the closed interval `[lo, hi]` in which the minimum is searched), `initial_train_x` (the points that seed the loop), `max_iterations` (budget cap), `ei_threshold` (early stopping threshold), `noise` (observation noise variance), and optionally `run_dir` (where to write the MRR record). See the parameter tables in the [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html) for the full list.
 3. **Execute** with `run()`, which returns `best_x` and `best_y` along with the full training data.
 4. **Inspect** the run with `plot_iterations()`.
@@ -61,8 +58,8 @@ The usage pattern:
 from actgpr import ObjectiveFn, OptimisationRun, GPyTorchSurrogate
 
 
-# 1. Your blackbox function. Here an analytic stand-in for the tutorial.
-#    In practice it might run a simulation or trigger an experiment.
+# 1. Your blackbox function. Here an analytic stand-in.
+#    In practice it might run a simulation.
 def my_blackbox(x: float) -> float:
     return (x - 1) ** 2
 
@@ -135,6 +132,13 @@ It converges after 17 iterations via `ei_threshold`, at `best_x = -1.4965`,
 GIF's second title line stays constant across frames; `with_training` would
 show them retuned every iteration.
 
+**Simulating a noisy experiment:** a real instrument's readings are noisy, an analytic function is not. Pass `jitter` to add Gaussian noise to each evaluation, and set the surrogate's `noise` to match (`jitter` is a standard deviation, `noise` a variance):
+
+```python
+objective = ObjectiveFn(my_blackbox, jitter=0.1)   # seeded, so runs stay reproducible
+run = OptimisationRun.with_training(..., noise=0.1**2)
+```
+
 **Fit modes:** the two constructors select how GP hyperparameters are handled.
 
 - `OptimisationRun.with_training(...)` re-tunes lengthscale, outputscale, and noise at every iteration using [Adam](https://arxiv.org/abs/1412.6980) (`torch.optim.Adam`), a gradient descent variant with momentum and per-parameter step sizes: over `training_iter` steps it adjusts the hyperparameters to maximise the marginal log likelihood, meaning how plausible the observed training data is under a GP with those hyperparameters. Adam only fits the surrogate; it never evaluates the blackbox. Use this mode when you do not know good hyperparameters, which is the usual case.
@@ -197,6 +201,8 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
                  loop starts and records only the starting point
 ```
 
+To browse `results.h5` without writing code, the [H5Web](https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web) VS Code extension opens HDF5 files directly in the editor, with the groups, attributes, and plots of any dataset.
+
 To visualise a past run, `plot_run_history(run_dir)` builds a plot of `prediction_error`, `improvement`, and `max_ei` vs. iteration straight from a run directory's `results.h5`, with no `OptimisationRun` object needed, so it works on any run you (or someone else) have on disk. As in `plot_iterations()`, `max_ei` is drawn on a log scale by default, on its own right-hand axis since it spans orders of magnitude while the other two are linear and signed. Pass `log_scale=False` to omit it:
 
 ```python
@@ -216,21 +222,7 @@ plot_iteration_snapshot(snapshots[-1], axes)
 
 ## Plotting
 
-`OptimisationRun.plot_iterations()` covers the common case. Everything else lives in `actgpr.plotting` and is imported from there, since the package exports only the four core classes:
-
-| Use | What it draws |
-|---|---|
-| `run.plot_iterations()` | **Start here.** Interactive slider over every iteration of a finished run: GP fit on top, EI landscape below. A method on `OptimisationRun`, not in `actgpr.plotting`. |
-| `plot_run_history(run_dir)` | The whole run as one figure: `prediction_error`, `improvement`, and `max_ei` vs. iteration, read from a run directory. Use it to judge convergence at a glance, or to revisit a run you no longer have an object for. |
-| `load_snapshots(run_dir)` | Not a plot. Rebuilds a saved run's per-iteration snapshots so they can be fed to `plot_iteration_snapshot` without an `OptimisationRun`. |
-| `plot_iteration_snapshot(snapshot, axes)` | One iteration's GP + EI pair, drawn onto axes you supply. Use it to export single frames, build animations, or lay several iterations out side by side. |
-| `plot_surrogate(surrogate, test_x)` | A fitted surrogate on its own, with no run and no EI. Use it to inspect a `GPyTorchSurrogate` you fitted yourself. |
-| `plot_acquisition(candidates, ei_scores)` | The EI landscape on its own, without the GP panel. |
-| `plot_gp(candidates, f_mean, f_var, train_x, train_y)` | The lowest level: GP mean, 95 % band, and training data straight from tensors. Every other GP plot delegates to it. Use it when you have predictions from somewhere else. |
-
-`plot_gp`, `plot_surrogate`, `plot_acquisition`, and `plot_run_history` all take `ax=` to draw onto an existing axes and `show=False` to defer `plt.show()`, so they compose into multi-panel layouts. `plot_iteration_snapshot` takes an `axes` pair instead and never calls `plt.show()` itself, since it fills two panels at once.
-
-Log-scaling the EI axis is the default only on the two entry points meant to be called directly, `run.plot_iterations()` and `plot_run_history()`. The lower-level `plot_acquisition` and `plot_iteration_snapshot` default to linear (`log_scale=False` and `ei_log_scale=False`) and expect the caller to opt in, since they are usually driven by code that sets the axis range explicitly.
+`run.plot_iterations()` is the usual entry point, and `plot_run_history(run_dir)` summarises a finished run. `actgpr.plotting` also provides `load_snapshots`, `plot_iteration_snapshot`, `plot_surrogate`, `plot_acquisition`, and `plot_gp` for building your own figures. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) lists what each one draws and when to use it.
 
 ## Vocabulary
 
