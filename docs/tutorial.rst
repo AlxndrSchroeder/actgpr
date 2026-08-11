@@ -221,9 +221,8 @@ A harder example
 ~~~~~~~~~~~~~~~~~
 
 ``(x - 1)**2`` has a single minimum, so the search has little to explore.
-This configuration, the one behind the animation in the README, uses a
-multi-modal objective where the surrogate has to distinguish several local
-minima:
+This configuration uses a multi-modal objective, where the surrogate has to
+distinguish several local minima:
 
 .. code-block:: python
 
@@ -248,6 +247,19 @@ minima:
    run.run()
    run.plot_iterations()
 
+Stepping the slider through that run looks like this:
+
+.. image:: ../assets/plot_iterations_demo.gif
+   :alt: Per-iteration GP fit and EI landscape for sin(x) + x^2/40, converging on the minimum
+   :width: 600
+
+The blue band is the GP's 95 % confidence interval. It is wide wherever the
+objective has not been evaluated and pinches shut around each training
+point, so watching it narrow around ``x = -1.5`` is watching the surrogate
+become certain. Below it, the EI curve peaks where the next evaluation is
+most worth spending, and collapses towards ``ei_threshold`` as that
+certainty grows.
+
 It converges after 17 iterations via ``ei_threshold``, at
 ``best_x = -1.4965``, ``best_y = -0.9413``. The true minimum sits at
 ``x = -1.49593``, so the run lands within ``5.5e-4`` of it after only 18
@@ -255,7 +267,54 @@ objective evaluations: the 2 initial points plus one per evaluated
 iteration. The 17th iteration triggered convergence and was never
 evaluated.
 
-Step 5: the reproducibility record (MRR)
+Fixed hyperparameters (``without_training``) are why each title's second
+line stays constant across the frames; ``with_training`` would show them
+retuned every iteration.
+
+Step 5: check that it converged
+--------------------------------
+
+The slider shows what the surrogate believed at each step. The metrics
+figure shows whether the run as a whole got anywhere:
+
+.. code-block:: python
+
+   run.plot_metrics()
+
+.. image:: ../assets/plot_metrics_demo.png
+   :alt: current_best, improvement, max_ei and prediction_error against iteration
+   :width: 700
+
+Four panels, one per metric, for the same run as the animation above:
+
+``current_best``
+    The lowest objective value found so far. It steps down and then
+    flattens, which is the run finding the minimum and then confirming it.
+
+``improvement``
+    How much each evaluation lowered ``current_best``. It spikes early,
+    then sits at zero once the optimiser is refining rather than
+    discovering. Flat ``improvement`` while ``max_ei`` is still high means
+    the search is exploring, not finished.
+
+``max_ei``
+    The convergence signal, on a log axis. It falls by three orders of
+    magnitude and the run stops when it crosses ``ei_threshold``. A run
+    that has not converged shows this line still comfortably above the
+    threshold.
+
+``prediction_error``
+    ``predicted_y - new_y``: how wrong the surrogate was about the point it
+    just chose. Large and swinging either side of zero early on, then
+    settling towards zero as the surrogate learns the objective.
+
+One panel per metric rather than one shared axes: the four have unrelated
+units and ranges, so overlaying them flattens all but the largest into a
+line along zero. ``max_ei`` is the only one that can take a log axis, since
+``prediction_error`` is signed and ``improvement`` is frequently exactly
+zero. Pass ``log_scale=False`` to make that panel linear too.
+
+Step 6: the reproducibility record (MRR)
 -----------------------------------------
 
 Because ``run_dir`` was given, the run created a timestamped folder under
@@ -377,7 +436,7 @@ Shared parameters
        ``prediction_error``/``improvement`` history used by
        ``load_metrics()`` is recorded either way.
    * - ``run_dir`` (default None)
-     - If given, writes the MRR record (see Step 5) to a timestamped
+     - If given, writes the MRR record (see Step 6) to a timestamped
        folder under this path. If ``None``, nothing is written to disk.
 
 ``with_training`` only
