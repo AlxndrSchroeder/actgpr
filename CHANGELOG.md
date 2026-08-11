@@ -141,6 +141,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   particular Objective considers worth recording; `repr()` is the one thing
   every object provides
 
+### Fixed
+
+- `OptimisationRun.plot_iterations()` on a run that had not been executed
+  yet reported "Set store_snapshots=True before calling run()", blaming a
+  flag that was never the problem and sending the caller after the wrong
+  cause. It now says to call `run()` first, matching `plot_metrics()`. The
+  store_snapshots message is unchanged for the case it does describe
+
 ## [0.2.0] - 2026-07-28
 
 ### Added

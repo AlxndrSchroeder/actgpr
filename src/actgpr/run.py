@@ -795,8 +795,18 @@ class OptimisationRun:
         Raises
         ------
         RuntimeError
-            If store_snapshots was False or no snapshots were recorded.
+            If the run has not been executed yet, or if it was executed
+            with store_snapshots=False so no snapshots were recorded.
         """
+        # Distinguished from the store_snapshots case below: both leave no
+        # snapshots to browse, but telling someone who has not called run()
+        # to re-run with store_snapshots=True sends them after the wrong
+        # cause. Mirrors plot_metrics.
+        if not self._results:
+            raise RuntimeError(
+                "No iterations available. Call run() before plot_iterations()."
+            )
+
         snapshots = [r for r in self._results if "candidates" in r]
         if self._convergence_snapshot is not None:
             snapshots = snapshots + [self._convergence_snapshot]
