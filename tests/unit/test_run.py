@@ -270,15 +270,17 @@ class TestPlotHistory:
         result = run.run()
 
         assert run.run_dir is None
-        _, ax = run.plot_history(show=False)
+        fig, axes = run.plot_history(show=False)
+        title = fig._suptitle.get_text()
 
-        assert f"best_x: {result['best_x']:.4f}" in ax.get_title()
-        assert result["stop_reason"] in ax.get_title()
+        assert axes.shape == (2, 2)
+        assert f"best_x: {result['best_x']:.4f}" in title
+        assert result["stop_reason"] in title
 
     def test_matches_the_plot_read_back_from_disk(self, tmp_path: Path) -> None:
         """Test that the in-memory and on-disk histories draw the same figure.
 
-        Both delegate to plotting.draw_run_history, so this guards the
+        Both delegate to plotting._draw_run_history, so this guards the
         single definition of the figure against the two callers drifting.
         """
         from actgpr.plotting import plot_run_history
@@ -297,18 +299,18 @@ class TestPlotHistory:
         )
         run.run()
 
-        _, from_memory = run.plot_history(show=False)
-        _, from_disk = plot_run_history(run.run_dir, show=False)
+        memory_fig, memory_axes = run.plot_history(show=False)
+        disk_fig, disk_axes = plot_run_history(run.run_dir, show=False)
 
-        assert from_memory.get_title() == from_disk.get_title()
-        for memory_line, disk_line in zip(
-            from_memory.get_lines(), from_disk.get_lines()
-        ):
-            assert memory_line.get_label() == disk_line.get_label()
+        assert memory_fig._suptitle.get_text() == disk_fig._suptitle.get_text()
+        for from_memory, from_disk in zip(memory_axes.flatten(), disk_axes.flatten()):
+            assert from_memory.get_title() == from_disk.get_title()
+            memory_line = from_memory.get_lines()[0]
+            disk_line = from_disk.get_lines()[0]
             assert list(memory_line.get_ydata()) == list(disk_line.get_ydata())
 
-    def test_log_scale_false_omits_the_ei_axis(self, tmp_path: Path) -> None:
-        """Test that opting out drops the max_ei twin axis, as on disk."""
+    def test_log_scale_false_leaves_every_panel_linear(self, tmp_path: Path) -> None:
+        """Test that opting out drops the max_ei log axis, as on disk."""
         torch.manual_seed(SEED)
         run = OptimisationRun.without_training(
             objective=ObjectiveFn(),
@@ -321,9 +323,9 @@ class TestPlotHistory:
         )
         run.run()
 
-        fig, ax = run.plot_history(show=False, log_scale=False)
+        _, axes = run.plot_history(show=False, log_scale=False)
 
-        assert fig.axes == [ax]
+        assert all(ax.get_yscale() == "linear" for ax in axes.flatten())
 
 
 class TestCustomObjective:

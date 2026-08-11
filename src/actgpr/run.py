@@ -11,19 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
 from actgpr import mrr
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
-from actgpr.plotting import (
-    EI_LOG_FLOOR_MARGIN,
-    draw_run_history,
-    plot_iteration_snapshot,
-)
+from actgpr.plotting import HISTORY_FIELDS, _draw_iteration_slider, _draw_run_history
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -707,33 +703,28 @@ class OptimisationRun:
 
     def plot_history(
         self,
-        ax: Axes | None = None,
         show: bool = True,
         log_scale: bool = True,
-    ) -> tuple[Figure, Axes]:
+    ) -> tuple[Figure, np.ndarray]:
         """Plot this run's validation metrics against iteration.
 
         The in-memory counterpart to ``plotting.plot_run_history``, which
         reads the same series from a saved ``results.h5``. Both draw the
-        identical figure via ``plotting.draw_run_history``. Use this one
-        while the run object is still to hand, including for a run that
-        wrote no MRR record and therefore has no directory to read back.
+        identical figure, one panel per metric. Use this one while the run
+        object is still to hand, including for a run that wrote no MRR
+        record and therefore has no directory to read back.
 
         Parameters
         ----------
-        ax : matplotlib.axes.Axes or None, optional
-            An existing axes to draw on. If None, a new figure and axes are
-            created.
         show : bool, optional
             Whether to call plt.show() immediately, by default True.
         log_scale : bool, optional
-            If True (the default), ``max_ei`` is drawn on a second y-axis
-            with a log scale.
+            If True (the default), the ``max_ei`` panel is log-scaled.
 
         Returns
         -------
-        tuple[Figure, Axes]
-            The figure and the primary axes.
+        tuple[Figure, numpy.ndarray]
+            The figure and its 2x2 array of axes, one panel per metric.
 
         Raises
         ------
@@ -747,16 +738,16 @@ class OptimisationRun:
 
         best_index = torch.argmin(self.train_y)
 
-        return draw_run_history(
+        return _draw_run_history(
             iteration=[record["iteration"] for record in self._results],
-            prediction_error=[record["prediction_error"] for record in self._results],
-            improvement=[record["improvement"] for record in self._results],
-            max_ei=[record["max_ei"] for record in self._results],
+            series={
+                field: [record[field] for record in self._results]
+                for field in HISTORY_FIELDS
+            },
             best_x=self.train_x[best_index].item(),
             best_y=self.train_y[best_index].item(),
             stop_reason=self._stop_reason,
             fitted_hyperparameters=self._fitted_hyperparameters(),
-            ax=ax,
             show=show,
             log_scale=log_scale,
         )
@@ -800,65 +791,13 @@ class OptimisationRun:
         snapshots = [r for r in self._results if "candidates" in r]
         if self._convergence_snapshot is not None:
             snapshots = snapshots + [self._convergence_snapshot]
-        if not snapshots:
-            raise RuntimeError(
-                "No snapshots available. Set store_snapshots=True before calling run()."
-            )
 
-        # Fixed EI y-axis range shared across all iterations. Otherwise each
-        # redraw autoscales to its own EI scores, hiding the shrinking max EI
-        # that signals convergence.
-        max_ei_overall = max(r["ei_scores"].max().item() for r in snapshots)
-        if log_scale:
-            # Floor one order of magnitude below ei_threshold, so the
-            # threshold line sits inside the plot rather than at its edge.
-            ei_ylim = (self.ei_threshold * EI_LOG_FLOOR_MARGIN, max_ei_overall * 2)
-            ei_threshold = self.ei_threshold
-        else:
-            # 5% headroom keeps the peak off the frame.
-            ei_ylim = (0.0, max_ei_overall * 1.05)
-            ei_threshold = None
-
-        fig, (gp_ax, ei_ax) = plt.subplots(2, 1, figsize=(10, 8))
-        plt.subplots_adjust(bottom=0.18, hspace=0.35)
-
-        # Draw initial state
-        plot_iteration_snapshot(
-            snapshots[0],
-            (gp_ax, ei_ax),
-            ei_ylim=ei_ylim,
-            ei_log_scale=log_scale,
-            ei_threshold=ei_threshold,
+        # show=False so the slider is stored before the window opens: with a
+        # blocking backend plt.show() does not return until it is closed, and
+        # the reference must already be held by then.
+        slider = _draw_iteration_slider(
+            snapshots, self.ei_threshold, log_scale=log_scale, show=False
         )
-
-        # Slider axis sits below both subplots
-        slider_ax = fig.add_axes([0.15, 0.04, 0.7, 0.04])
-        slider = Slider(
-            slider_ax,
-            "Iteration",
-            valmin=1,
-            valmax=len(snapshots),
-            valinit=1,
-            valstep=1,
-        )
-
-        def _update(val: float) -> None:
-            """Redraw both subplots for the selected iteration."""
-            idx = int(val) - 1
-            gp_ax.cla()
-            ei_ax.cla()
-            plot_iteration_snapshot(
-                snapshots[idx],
-                (gp_ax, ei_ax),
-                ei_ylim=ei_ylim,
-                ei_log_scale=log_scale,
-                ei_threshold=ei_threshold,
-            )
-            fig.canvas.draw_idle()
-
-        slider.on_changed(_update)
-
-        # Keep the slider alive beyond this method's local scope.
         self._active_slider = slider
 
         plt.show()
