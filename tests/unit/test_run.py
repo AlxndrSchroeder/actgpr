@@ -1003,6 +1003,18 @@ class TestOptimisationRunSnapshots:
 
         assert gp_ax.get_title() != title_before
 
+    def test_plot_iterations_before_run_names_the_real_cause(
+        self, snapshot_run: OptimisationRun
+    ) -> None:
+        """Test that a run that was never executed says so.
+
+        Both an unexecuted run and a store_snapshots=False run leave nothing
+        to browse, but telling someone who has not called run() to re-run
+        with store_snapshots=True sends them after the wrong cause.
+        """
+        with pytest.raises(RuntimeError, match="Call run\\(\\) before plot_iterations"):
+            snapshot_run.plot_iterations(show=False)
+
     def test_show_false_defers_plt_show(
         self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
     ) -> None:
