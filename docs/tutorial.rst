@@ -286,9 +286,9 @@ an error line instead of the summary line.
 Revisiting a saved run
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-``plot_run_history`` builds the validation-metrics plot directly from a
-run directory, with no ``OptimisationRun`` object needed, so a past run can
-be revisited at any later time:
+Both figures can be rebuilt from a run directory alone, with no
+``OptimisationRun`` object, so a past run can be revisited at any later
+time. ``plot_run_history`` draws the validation metrics:
 
 .. code-block:: python
 
@@ -299,22 +299,23 @@ be revisited at any later time:
    run_dir = sorted(Path("results").iterdir())[-1]   # newest run
    plot_run_history(run_dir)
 
-This plots ``prediction_error``, ``improvement``, and ``max_ei`` against
-iteration: ``prediction_error`` shrinking towards zero shows the surrogate
-learning the blackbox; ``improvement`` flattening shows the optimisation
-converging.
-
-``max_ei`` is drawn on its own right-hand axis with a log scale, the same
-default as ``plot_iterations()``, and for the same reason: EI falls by
-orders of magnitude, so on the shared linear axis it would sit flat against
-zero and its decay towards ``ei_threshold`` would be invisible.
-``prediction_error`` and ``improvement`` stay linear because the first is
-signed and the second is frequently exactly zero, neither of which a log
-axis can display. Pass ``log_scale=False`` to omit the ``max_ei`` axis:
+and ``plot_run_iterations`` opens the same interactive slider as
+``run.plot_iterations()``:
 
 .. code-block:: python
 
-   plot_run_history(run_dir, log_scale=False)
+   from actgpr.plotting import plot_run_iterations
+
+   slider = plot_run_iterations(run_dir)
+
+Assign the slider to a variable that outlives the call. Matplotlib keeps
+only a weak reference to it, so a slider left unassigned is garbage
+collected: it is still drawn, but silently stops responding to drags.
+
+The slider needs the run to have kept snapshots (the default). It raises
+``RuntimeError`` for a run executed with ``store_snapshots=False``, since
+the per-iteration GP arrays were never written. ``plot_run_history`` works
+either way, since the validation metrics are always recorded.
 
 For a custom analysis, read the same series directly:
 
@@ -326,26 +327,6 @@ For a custom analysis, read the same series directly:
        iteration = f["history/iteration"][:]
        prediction_error = f["history/prediction_error"][:]
        improvement = f["history/improvement"][:]
-
-That plot summarises the whole run. To revisit the *per-iteration* state
-instead, ``load_iteration_snapshots`` rebuilds exactly the snapshots
-``plot_iterations()`` browses in memory, so a finished run's iterations can
-be replotted from disk:
-
-.. code-block:: python
-
-   import matplotlib.pyplot as plt
-
-   from actgpr.plotting import load_iteration_snapshots, plot_iteration_snapshot
-
-   snapshots = load_iteration_snapshots(run_dir)
-
-   _, axes = plt.subplots(2, 1)
-   plot_iteration_snapshot(snapshots[-1], axes)   # the last iteration
-
-This needs the run to have kept snapshots (the default). It raises
-``RuntimeError`` for a run executed with ``store_snapshots=False``, since
-the per-iteration GP arrays were never written.
 
 Parameter reference
 --------------------
@@ -430,14 +411,11 @@ Shared parameters
 Plotting reference
 ------------------
 
-``run.plot_iterations()`` covers the common case. Everything else lives in
-``actgpr.plotting`` and is imported from there, since the package itself
-exports only the four core classes.
-
-Two kinds of plot, each reachable both during a session and from a saved
-run. ``run.run_dir`` holds the timestamped directory the run wrote to, so
-the disk-based functions work on a run you just finished as well as on one
-from last month:
+Two figures, each reachable two ways: from the run object you still hold,
+or from a run directory on disk. That is four entry points in total, and
+there is nothing else to learn. The two methods sit on ``OptimisationRun``;
+the two functions are imported from ``actgpr.plotting``, since the package
+itself exports only the four core classes.
 
 .. list-table::
    :header-rows: 1
@@ -450,13 +428,13 @@ from last month:
      - ``run.plot_iterations()``
      - ``run.plot_history()``
    * - From a saved run
-     - ``load_iteration_snapshots(run_dir)`` then ``plot_iteration_snapshot``
+     - ``plot_run_iterations(run_dir)``
      - ``plot_run_history(run_dir)``
 
 The bottom row needs ``run_dir`` to have been set, since it reads
 ``results.h5``; the methods work either way. ``run.run_dir`` holds the
-timestamped directory the run wrote to, so the disk-based routes also work
-on a run you just finished.
+timestamped directory the run wrote to, so the two functions also work on a
+run you just finished, not only on one from last month.
 
 .. list-table::
    :header-rows: 1
@@ -465,46 +443,34 @@ on a run you just finished.
    * - Use
      - What it draws
    * - ``run.plot_iterations()``
-     - **Start here.** Interactive slider over every iteration of a
-       finished run: GP fit on top, EI landscape below. A method on
-       ``OptimisationRun``, not in ``actgpr.plotting``.
-   * - ``plot_run_history(run_dir)``
-     - The whole run as one figure: ``prediction_error``, ``improvement``,
-       and ``max_ei`` vs. iteration, read from a run directory. Use it to
-       judge convergence at a glance, or to revisit a run you no longer
-       have an object for.
+     - **Start here.** An interactive slider over every iteration of a
+       finished run: the GP fit on top, the EI landscape below. Watching the
+       band narrow around the minimum is the clearest picture of what the
+       algorithm did.
    * - ``run.plot_history()``
-     - The same figure as ``plot_run_history``, drawn from the run object
-       you still hold. Works for a run that wrote no MRR record.
-   * - ``load_iteration_snapshots(run_dir)``
-     - Not a plot. Rebuilds a saved run's per-iteration snapshots so they
-       can be fed to ``plot_iteration_snapshot`` without an
-       ``OptimisationRun``.
-   * - ``plot_iteration_snapshot(snapshot, axes)``
-     - One iteration's GP and EI pair, onto axes you supply. Use it to
-       export single frames, build animations, or lay several iterations
-       side by side.
-   * - ``plot_surrogate(surrogate, test_x)``
-     - A fitted surrogate on its own, with no run and no EI panel. Use it
-       to inspect a ``GPyTorchSurrogate`` you fitted yourself.
-   * - ``plot_acquisition(candidates, ei_scores)``
-     - The EI landscape on its own, without the GP panel.
-   * - ``plot_gp(candidates, f_mean, f_var, train_x, train_y)``
-     - The lowest level: GP mean, 95 % band, and training data straight
-       from tensors. Every other GP plot delegates to it.
+     - The whole run as one figure, four panels: ``current_best``,
+       ``improvement``, ``max_ei`` (log-scaled), and ``prediction_error``
+       against iteration. Use it to judge convergence at a glance.
+   * - ``plot_run_iterations(run_dir)``
+     - The slider again, for a run read back from disk. Keep the returned
+       ``Slider`` in a variable or matplotlib will collect it and it will
+       stop responding.
+   * - ``plot_run_history(run_dir)``
+     - The four panels again, for a run read back from disk.
 
-``plot_gp``, ``plot_surrogate``, ``plot_acquisition``, and
-``plot_run_history`` all take ``ax=`` to draw onto an existing axes and
-``show=False`` to defer ``plt.show()``, so they compose into multi-panel
-layouts. ``plot_iteration_snapshot`` takes an ``axes`` pair instead and
-never calls ``plt.show()`` itself, since it fills two panels at once.
+That is the whole plotting API. The two methods need only the run object,
+the two functions need only the directory, and each pair draws the
+identical figure, so which one to reach for depends solely on what you
+still have to hand.
 
-Log-scaling the EI axis is the default only on the two entry points meant
-to be called directly, ``run.plot_iterations()`` and
-``plot_run_history()``. The lower-level ``plot_acquisition`` and
-``plot_iteration_snapshot`` default to linear (``log_scale=False`` and
-``ei_log_scale=False``), since they are usually driven by code that sets
-the axis range explicitly.
+Both functions take ``show=False`` to defer ``plt.show()``, and both routes
+take ``log_scale=False``: on the slider it makes the EI panel linear, on
+the history figure it makes the ``max_ei`` panel linear. Log is the default
+because EI falls by orders of magnitude as a run converges, so on a linear
+axis it sits flat against zero and its decay towards ``ei_threshold`` is
+invisible. The other three metrics stay linear either way, since
+``prediction_error`` is signed and ``improvement`` is frequently exactly
+zero, neither of which a log axis can display.
 
 Where to go next
 ----------------
