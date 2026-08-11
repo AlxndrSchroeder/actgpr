@@ -243,18 +243,7 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
 
 To browse `results.h5` without writing code, the [H5Web](https://marketplace.visualstudio.com/items?itemName=h5web.vscode-h5web) VS Code extension opens HDF5 files directly in the editor, with the groups, attributes, and plots of any dataset.
 
-Both figures can also be rebuilt from a run's log directory alone, with no `OptimisationRun` object, so they work on any run you (or someone else) have on disk:
-
-```python
-from actgpr.plotting import load_iterations, load_metrics
-
-run_dir = "results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002"
-
-slider = load_iterations(run_dir)  # the interactive slider
-load_metrics(run_dir)              # the four validation metrics
-```
-
-`load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. Keep the returned `Slider` in a variable, or matplotlib collects it and it stops responding to drags.
+Both figures below can also be rebuilt from this directory alone, with no `OptimisationRun` object, so they work on any run you (or someone else) have on disk.
 
 ## Plotting
 
@@ -265,7 +254,23 @@ Two figures, each reachable two ways. That is the whole plotting API:
 | **From the run** | `run.plot_iterations()` | `run.plot_metrics()` |
 | **From the logs** | `load_iterations(run_dir)` | `load_metrics(run_dir)` |
 
-The prefix says where the data comes from. `plot_` draws from the run object you are still holding, so it is a method on `OptimisationRun`. `load_` takes the path to a run's log directory, reads `results.h5`, and draws the same figure, so it is a function imported from `actgpr.plotting`. Each pair is the identical figure, so which one to reach for depends solely on what you still have to hand. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) describes each in detail.
+The prefix says where the data comes from. `plot_` draws from the run object you are still holding, so those two are methods on `OptimisationRun`. `load_` takes the path to a run's log directory, reads its `results.h5`, and draws the same figure, so those two are functions imported from `actgpr.plotting`.
+
+- **`run.plot_iterations()`** opens an interactive slider over every iteration: the GP fit on top, the EI landscape below. Watching the confidence band narrow around the minimum is the clearest picture of what the algorithm did. Shown in the GIF above.
+- **`run.plot_metrics()`** draws the whole run as four panels, `current_best`, `improvement`, `max_ei` and `prediction_error` against iteration, to judge convergence at a glance. Shown in the image above.
+- **`load_iterations(run_dir)`** is the same slider, for a run read back from its logs. Keep the returned `Slider` in a variable, or matplotlib collects it and it stops responding to drags.
+- **`load_metrics(run_dir)`** is the same four panels, for a run read back from its logs.
+
+Each pair is the identical figure, so which one to reach for depends solely on what you still have to hand. `run.run_dir` holds the directory a run wrote to, so the `load_` pair works on a run you just finished as well as on one from last month. Both `load_` functions need only that path:
+
+```python
+from actgpr.plotting import load_iterations, load_metrics
+
+slider = load_iterations("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
+load_metrics("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
+```
+
+`load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) walks through both figures panel by panel.
 
 ## Vocabulary
 
