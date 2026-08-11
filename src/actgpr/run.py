@@ -752,11 +752,14 @@ class OptimisationRun:
             log_scale=log_scale,
         )
 
-    def plot_iterations(self, log_scale: bool = True) -> None:
+    def plot_iterations(self, show: bool = True, log_scale: bool = True) -> None:
         """Open an interactive matplotlib figure to browse iterations.
 
         Creates a figure with two subplots (GP predictions on top,
         EI landscape on bottom) and a slider to scrub through iterations.
+
+        The from-the-run counterpart to ``plotting.load_iterations``, which
+        opens the identical figure for a run read back from its logs.
 
         The Slider is kept alive via ``self._active_slider`` for as long as
         the OptimisationRun exists. Matplotlib does not keep its own strong
@@ -768,6 +771,12 @@ class OptimisationRun:
 
         Parameters
         ----------
+        show : bool, optional
+            Whether to call plt.show() immediately, by default True. Pass
+            False when opening this alongside another figure: plt.show()
+            displays *every* open figure, so calling it once per figure
+            re-displays the earlier ones. Build both, then call plt.show()
+            once yourself.
         log_scale : bool, optional
             If True, draws the EI subplot's y-axis on a log scale, with the
             ei_threshold convergence criterion marked as a reference line.
@@ -792,15 +801,16 @@ class OptimisationRun:
         if self._convergence_snapshot is not None:
             snapshots = snapshots + [self._convergence_snapshot]
 
-        # show=False so the slider is stored before the window opens: with a
-        # blocking backend plt.show() does not return until it is closed, and
-        # the reference must already be held by then.
+        # Always drawn with show=False so the slider is stored before any
+        # window opens: with a blocking backend plt.show() does not return
+        # until it is closed, and the reference must already be held by then.
         slider = _draw_iteration_slider(
             snapshots, self.ei_threshold, log_scale=log_scale, show=False
         )
         self._active_slider = slider
 
-        plt.show()
+        if show:
+            plt.show()
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the OptimisationRun."""

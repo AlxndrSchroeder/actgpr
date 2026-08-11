@@ -1003,6 +1003,29 @@ class TestOptimisationRunSnapshots:
 
         assert gp_ax.get_title() != title_before
 
+    def test_show_false_defers_plt_show(
+        self, snapshot_run: OptimisationRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that show=False builds the figure without displaying it.
+
+        plt.show() displays every open figure, so opening this one and the
+        metrics figure with one plt.show() each re-displays this one on the
+        second call. Deferring lets a caller build both and show once.
+        """
+        import matplotlib.pyplot as plt
+
+        calls: list[int] = []
+        monkeypatch.setattr(plt, "show", lambda: calls.append(1))
+
+        snapshot_run.run()
+        snapshot_run.plot_iterations(show=False)
+
+        assert snapshot_run._active_slider is not None
+        assert calls == []
+
+        snapshot_run.plot_iterations()
+        assert calls == [1]
+
 
 class TestOptimisationRunWithoutTraining:
     """Tests for OptimisationRun.without_training() classmethod."""
