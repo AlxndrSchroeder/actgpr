@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `OptimisationRun.plot_iterations()` gained `show=False`, which the other
+  three entry points already had, so all four can now defer `plt.show()`.
+  Without it, opening the slider and the metrics figure from one script
+  meant two `plt.show()` calls, and `plt.show()` displays *every* open
+  figure rather than only the newest, so the slider window was re-displayed
+  by the second call and flickered back into view as the metrics window was
+  closed. Building both with `show=False` and calling `plt.show()` once
+  opens them side by side instead
+
 - `plotting.load_iterations(run_dir)` opens the interactive
   per-iteration slider for a run read back from disk, the counterpart to
   `OptimisationRun.plot_iterations()`. Browsing a saved run previously

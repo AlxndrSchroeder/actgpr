@@ -523,8 +523,22 @@ run you just finished, not only on one from last month.
 Each pair draws the identical figure, so which one to reach for depends
 solely on what you still have to hand.
 
-Both ``load_`` functions take ``show=False`` to defer ``plt.show()``, and
-all four take ``log_scale=False``: on the slider it makes the EI panel
+All four take ``show=False``. Use it whenever you open more than one
+figure: ``plt.show()`` displays *every* open figure, not just the newest,
+so calling it once per figure re-displays the earlier ones, and the first
+window flickers back into view as the last one is closed. Build the figures
+first, then call ``plt.show()`` yourself:
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   slider = load_iterations(run_dir, show=False)
+   load_metrics(run_dir, show=False)
+
+   plt.show()   # once, for both
+
+All four also take ``log_scale=False``: on the slider it makes the EI panel
 linear, on the metrics figure it makes the ``max_ei`` panel linear. Log is the default
 because EI falls by orders of magnitude as a run converges, so on a linear
 axis it sits flat against zero and its decay towards ``ei_threshold`` is

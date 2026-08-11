@@ -264,11 +264,18 @@ The prefix says where the data comes from. `plot_` draws from the run object you
 Each pair is the identical figure, so which one to reach for depends solely on what you still have to hand. `run.run_dir` holds the directory a run wrote to, so the `load_` pair works on a run you just finished as well as on one from last month. Both `load_` functions need only that path:
 
 ```python
+import matplotlib.pyplot as plt
 from actgpr.plotting import load_iterations, load_metrics
 
-slider = load_iterations("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
-load_metrics("results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002")
+run_dir = "results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002"
+
+slider = load_iterations(run_dir, show=False)
+load_metrics(run_dir, show=False)
+
+plt.show()  # once, for both
 ```
+
+All four take `show=False`. Use it whenever you open more than one figure: `plt.show()` displays *every* open figure, not just the newest, so calling it once per figure re-displays the earlier ones and the first window flickers back as the last one closes. Build the figures, then call `plt.show()` yourself.
 
 `load_iterations` needs the run to have kept snapshots (the default); `load_metrics` works either way, since the validation metrics are always recorded. The [tutorial](https://alxndrschroeder.github.io/actgpr/tutorial.html#plotting-reference) walks through both figures panel by panel.
 
