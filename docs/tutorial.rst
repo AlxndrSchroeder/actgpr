@@ -122,6 +122,12 @@ registration:
 checks whether ``objective`` is an ``ObjectiveFn``, so a class like this
 one works exactly the same way.
 
+That is deliberate, not an oversight: it is what lets you plug in a
+simulation of your own without adapting it to ``actgpr``. The interface is
+declared as a ``typing.Protocol`` (``actgpr.objective_fn.Objective``), so a
+type checker accepts your class too, even though it inherits nothing and
+registers nowhere.
+
 Step 2: configure the run
 --------------------------
 
