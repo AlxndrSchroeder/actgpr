@@ -5,6 +5,92 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- `Objective.evaluate` now evaluates **one input point per call** and
+  returns **one float**: `evaluate(x1, ..., xd) -> float`, with one
+  argument per input dimension. Before, `evaluate(*args)` treated every
+  argument as a separate 1D point and returned a tuple, so `evaluate(x1,
+  x2, x3)` could not mean "the 3D point (x1, x2, x3)", and supporting
+  several inputs required choosing one meaning. `ObjectiveFn(func)` now
+  calls `func(*x)`, so a user writes `def f(x1, x2, x3)`. An Objective
+  still returning a tuple fails with a `TypeError` that names the change
+- `run()` returns `best_x` as a tuple with one coordinate per input, also
+  for a single input (`(1.0,)` rather than `1.0`), so the same code reads
+  it for any number of inputs. `train_x` is a tensor of shape `(n, d)`
+- `OptimisationRun.search_bounds` and `Acquisition.search_bounds` hold one
+  `(lo, hi)` pair per input dimension, e.g. `((-3.0, 5.0),)`
+- `GPyTorchSurrogate.hyperparameters()` returns every value as a tuple:
+  `lengthscale` with one entry per input dimension, `outputscale` and
+  `noise` with one entry each
+- `Acquisition.find_next_input_point()` returns a tuple, and
+  `Acquisition.candidates` has shape `(m, d)`
+- `GPyTorchSurrogate.predict()` no longer returns `f_covar`. The dense
+  `(m, m)` covariance was computed and asserted over every iteration but
+  never read, and its cost grows with the square of the candidate count:
+  32768 candidates took 213 s against 15 ms for 2048. It remains available
+  on demand as `preds["f_preds"].covariance_matrix`
+- The default `ObjectiveFn` is the sum of squared inputs, which is still
+  x² with one input; its `repr` reads `function=sum(x_i^2)`
+
+### Added
+
+- **Any number of inputs, one output.** The number of `(lo, hi)` pairs in
+  `search_bounds` sets the input dimension, e.g.
+  `search_bounds=[(-2, 2), (-3, 1), (0, 5)]` for three inputs, and
+  `initial_train_x` takes one row per point. A single `(lo, hi)` pair and a
+  flat `initial_train_x` remain valid shorthand for one input, so existing
+  1D constructor calls are unchanged. Mismatches (a flat list for several
+  inputs, a point with the wrong number of coordinates, a lengthscale list
+  of the wrong length) fail before the Objective is called, with a message
+  saying what was expected
+- With more than one input, candidates are drawn from a scrambled Sobol
+  sequence (`torch.quasirandom.SobolEngine`, no new dependency) instead of
+  a grid, since 500 grid points per input would be 125 million points in
+  3D. The existing coarse-then-zoom search is kept and generalised: the
+  refinement window is a box whose width follows the candidate spacing
+  `(hi - lo) / (n^(1/d) - 1)`, which is exactly the old grid step for one
+  input, so 1D behaviour is unchanged. The sampler is seeded with 25
+  (`Acquisition(seed=...)`) and the seed is recorded in `config.json`, so a
+  multi-input run reproduces exactly
+- One RBF lengthscale per input dimension (automatic relevance
+  determination), since inputs generally vary on different scales.
+  `without_training(lengthscale=...)` takes one value for all inputs or a
+  list with one per input
+- The MRR record describes the dimension: `n_dims` in `config.json` and
+  the `results.h5` root attributes, `candidate_seed` in `config.json`, and
+  run directory names now start with it (`..._3d_training50iter_...`).
+  `history/next_point` and `history/lengthscale` have one column per
+  input, and `final/best_x` and `meta.json`'s `best_x` hold one value per
+  input
+- `actgpr._points`, a single private definition of input points and
+  search bounds (`as_points`, `parse_search_bounds`, `format_values`)
+  shared by the surrogate, the acquisition function, and the run, so they
+  cannot disagree about shapes. `format_values` renders a one-input point
+  bare, so 1D log lines and plot titles read exactly as before
+
+### Changed
+
+- The iteration slider (`plot_iterations`, `load_iterations`) is for
+  problems with one input, since it draws the surrogate as a curve. For
+  more inputs it raises a `ValueError` saying so, and the check sits where
+  the first coordinate is taken, so scripts calling the per-frame drawer
+  directly cannot silently plot only x1 of a multi-input run.
+  `plot_metrics` and `load_metrics` work for any number of inputs
+- Run directories written by 0.3.0 still load with `load_metrics` and
+  `load_iterations`: the readers accept both the old scalar and flat
+  layout and the new per-dimension one
+
+### Fixed
+
+- The 1D candidate grid was generated in float32, torch's default, while
+  the rest of the package is float64, so every candidate carried up to
+  4.3e-8 of rounding error. It is now float64. The regression baseline was
+  regenerated for this change alone; the README demo run is unaffected
+  (still 17 iterations, `best_x` moves by 2.2e-7)
+
 ## [0.3.0] - 2026-08-11
 
 ### Changed
