@@ -67,7 +67,9 @@ class Acquisition:
             Number of candidate points scored in each of the two stages, by
             default 500 (matches the OptimisationRun default). With several
             input dimensions the same count is spread across all of them, so
-            raise it for problems with many dimensions.
+            raise it for problems with many dimensions; prediction cost grows
+            faster than linearly with it, so a few thousand is a sensible
+            ceiling.
         seed : int, optional
             Seed for the Sobol candidate sampler used with more than one
             input dimension, by default 25. Unused in one dimension, where

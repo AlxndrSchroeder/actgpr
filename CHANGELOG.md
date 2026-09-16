@@ -29,9 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Acquisition.candidates` has shape `(m, d)`
 - `GPyTorchSurrogate.predict()` no longer returns `f_covar`. The dense
   `(m, m)` covariance was computed and asserted over every iteration but
-  never read, and its cost grows with the square of the candidate count:
-  32768 candidates took 213 s against 15 ms for 2048. It remains available
-  on demand as `preds["f_preds"].covariance_matrix`
+  never read, and its size grows with the square of the candidate count:
+  at 16384 candidates a prediction took 31.8 s with it and 4.4 s without.
+  It remains available on demand as `preds["f_preds"].covariance_matrix`.
+  Prediction itself still grows faster than linearly in the candidate
+  count (inside GPyTorch), which is why the docs now give a ceiling for
+  `n_candidates`
 - The default `ObjectiveFn` is the sum of squared inputs, which is still
   x² with one input; its `repr` reads `function=sum(x_i^2)`
 

@@ -130,7 +130,7 @@ The one rule to remember: **the number of `search_bounds` pairs is the number of
 | `lengthscale=2.0` (`without_training`) | Used for every input |
 | `lengthscale=[0.5, 3.0]` | One value per input; the count must match |
 
-With several inputs the candidates are drawn from a seeded Sobol sequence instead of an evenly spaced grid, since a grid of 500 points per input would be 125 million points in 3D. `n_candidates` is then the number of points spread across all inputs, so raise it for problems with many inputs.
+With several inputs the candidates are drawn from a seeded Sobol sequence instead of an evenly spaced grid, since a grid of 500 points per input would be 125 million points in 3D. `n_candidates` is then the number of points spread across all inputs, so raise it for problems with many inputs, but not without limit: prediction cost grows faster than linearly with it (on a laptop about 0.04 s per stage at 2048 candidates and 4 s at 16384, and there are two stages per iteration), so a few thousand is a sensible ceiling.
 
 ### Example output
 

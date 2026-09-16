@@ -229,7 +229,10 @@ input is 125 million points in 3D), so the candidates are drawn from a
 scrambled Sobol sequence instead, which covers the space evenly. The
 sequence is seeded with 25 and the seed is recorded in ``config.json``, so a
 multi-input run reproduces exactly. ``n_candidates`` is then spread across
-all inputs, so raise it for problems with many inputs.
+all inputs, so raise it for problems with many inputs, but not without
+limit: prediction cost grows faster than linearly with it (on a laptop
+about 0.04 s per stage at 2048 candidates and 4 s at 16384, with two stages
+per iteration), so a few thousand is a sensible ceiling.
 
 Step 3: execute and interpret
 ------------------------------
