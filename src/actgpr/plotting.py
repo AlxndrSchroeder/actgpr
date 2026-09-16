@@ -51,9 +51,10 @@ HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
 
 
 def _as_values(stored: object) -> tuple[float, ...]:
-    """Read a stored hyperparameter as a tuple, whether scalar or array."""
-    # np.atleast_1d also accepts the scalar attributes v0.3.0 wrote, so
-    # results.h5 files from before per-dimension lengthscales still load.
+    """Read stored per-dimension values as a tuple, whether scalar or array."""
+    # np.atleast_1d also accepts the scalars v0.3.0 wrote for best_x,
+    # next_point and the hyperparameters, so results.h5 files from before
+    # multi-dimensional inputs still load.
     return tuple(float(value) for value in np.atleast_1d(stored))
 
 
@@ -446,8 +447,8 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
         for row, iteration in enumerate(iterations):
             group = f[f"iterations/iter_{int(iteration):03d}"]
             snapshot: dict = {"iteration": int(iteration)}
+            snapshot["next_point"] = _as_values(history["next_point"][row])
             for field in (
-                "next_point",
                 "new_y",
                 "current_best",
                 "max_ei",
@@ -469,7 +470,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
         if "converged_max_ei" in final.attrs:
             converged: dict = {
                 "iteration": int(final.attrs["n_iterations"]),
-                "next_point": float(final.attrs["converged_next_point"]),
+                "next_point": _as_values(final.attrs["converged_next_point"]),
                 "current_best": float(final["train_y"][:].min()),
                 "max_ei": float(final.attrs["converged_max_ei"]),
                 "train_x": torch.from_numpy(final["train_x"][:]),
@@ -652,7 +653,7 @@ METRIC_FIELDS = ("current_best", "improvement", "max_ei", "prediction_error")
 def _draw_metrics(
     iteration: Sequence[float],
     series: dict[str, Sequence[float]],
-    best_x: float,
+    best_x: Sequence[float],
     best_y: float,
     stop_reason: str,
     fitted_hyperparameters: dict[str, tuple[float, ...]] | None = None,
@@ -679,8 +680,11 @@ def _draw_metrics(
     series : dict
         The per-iteration values, keyed by the names in METRIC_FIELDS.
         All entries must be the same length as iteration.
-    best_x, best_y : float
-        The run's outcome, reported in the figure title.
+    best_x : sequence of float
+        The input point with the lowest output, one value per input
+        dimension, reported in the figure title.
+    best_y : float
+        The lowest output, reported in the figure title.
     stop_reason : str
         Which convergence criterion fired, reported in the figure title.
     fitted_hyperparameters : dict or None, optional
@@ -715,7 +719,7 @@ def _draw_metrics(
     # figures report the run's outcome identically whether it comes from
     # memory or from results.h5.
     title = (
-        f"Validation metrics | best_x: {best_x:.4f} | "
+        f"Validation metrics | best_x: {format_values(best_x)} | "
         f"best_y: {best_y:.4f} | stop: {stop_reason}"
     )
     if fitted_hyperparameters:
@@ -777,7 +781,7 @@ def load_metrics(
         history = f["history"]
         iteration = history["iteration"][:]
         series = {field: history[field][:] for field in METRIC_FIELDS}
-        best_x = f["final"].attrs["best_x"]
+        best_x = _as_values(f["final"].attrs["best_x"])
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
         # The hyperparameters the run finished with, written by

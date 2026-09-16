@@ -6,6 +6,7 @@ import json
 import logging
 import platform
 import subprocess
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -21,8 +22,9 @@ def create_run_dir(
     ei_threshold: float,
     max_iterations: int,
     noise: float,
-    lengthscale: float | None,
+    lengthscale: float | Sequence[float] | None,
     outputscale: float | None,
+    n_dims: int = 1,
 ) -> Path:
     """Create a timestamped run directory with parameters in the name.
 
@@ -40,10 +42,15 @@ def create_run_dir(
         Maximum number of evaluations.
     noise : float
         Noise level for the surrogate.
-    lengthscale : float | None
-        Lengthscale (if fit_mode is "notraining").
+    lengthscale : float, sequence of float, or None
+        Lengthscale (if fit_mode is "notraining"). A per-dimension sequence
+        is joined with hyphens in the folder name.
     outputscale : float | None
         Outputscale (if fit_mode is "notraining").
+    n_dims : int, optional
+        Number of input dimensions of the run, by default 1. Leads the
+        parameter part of the name, since it is the first thing that
+        distinguishes one run from another.
 
     Returns
     -------
@@ -54,12 +61,17 @@ def create_run_dir(
 
     if fit_mode == "training":
         folder_name = (
-            f"{timestamp}_training{training_iter}iter_"
+            f"{timestamp}_{n_dims}d_training{training_iter}iter_"
             f"ei{ei_threshold}_maxiter{max_iterations}_n{noise}"
         )
     else:
+        # A per-dimension lengthscale would otherwise render as "[1.0, 2.0]",
+        # putting brackets, commas and spaces into a directory name.
+        values = np.atleast_1d(np.asarray(lengthscale, dtype=float))
+        if values.size > 1:
+            lengthscale = "-".join(str(value) for value in values.tolist())
         folder_name = (
-            f"{timestamp}_notraining_ei{ei_threshold}_"
+            f"{timestamp}_{n_dims}d_notraining_ei{ei_threshold}_"
             f"maxiter{max_iterations}_ls{lengthscale}_os{outputscale}_n{noise}"
         )
 
@@ -95,7 +107,7 @@ def write_meta(
     run_dir: Path,
     run_start: datetime,
     run_end: datetime,
-    best_x: float,
+    best_x: Sequence[float],
     best_y: float,
     n_iterations: int,
     stop_reason: str,
@@ -154,7 +166,7 @@ def write_meta(
         "repository": repository,
         "libraries": libraries,
         "output_summary": {
-            "best_x": float(best_x),
+            "best_x": [float(value) for value in best_x],
             "best_y": float(best_y),
             "n_iterations": n_iterations,
             "stop_reason": stop_reason,
@@ -173,7 +185,7 @@ def save_hdf5(
     store_snapshots: bool,
     final_train_x: torch.Tensor,
     final_train_y: torch.Tensor,
-    best_x: float,
+    best_x: Sequence[float],
     best_y: float,
     stop_reason: str,
     n_iterations: int,
@@ -185,22 +197,28 @@ def save_hdf5(
     Layout
     ------
     ``/`` (root)
-        Attributes holding the run configuration (bounds, thresholds, ...).
+        Attributes holding the run configuration (``n_dims``, bounds,
+        thresholds, ...).
     ``history/``
-        Per-iteration scalar series, each a dataset of length ``n_iterations``
-        aligned by the ``iteration`` index dataset: ``next_point``, ``new_y``,
-        ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``,
-        plus ``lengthscale``/``outputscale``/``noise`` when the surrogate
-        reports them, giving the hyperparameters behind each iteration's fit.
+        Per-iteration series, each a dataset with one row per iteration,
+        aligned by the ``iteration`` index dataset: ``new_y``,
+        ``current_best``, ``max_ei``, ``prediction_error``, ``improvement``
+        (one value per row), ``next_point`` (one column per input
+        dimension), plus ``lengthscale``/``outputscale``/``noise`` when the
+        surrogate reports them, giving the hyperparameters behind each
+        iteration's fit (lengthscale has one column per input dimension).
         This is the single authoritative record of the run's scalar history.
         Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
     ``iterations/iter_NNN/``
         Written only when ``store_snapshots`` is True: the GP snapshot arrays
         ``candidates``, ``f_mean``, ``f_var``, ``ei_scores``, ``train_x``,
-        ``train_y`` for that iteration.
+        ``train_y`` for that iteration. Input points (``candidates``,
+        ``train_x``) have one row per point and one column per input
+        dimension.
     ``final/``
-        Attributes ``best_x``, ``best_y``, ``stop_reason``, ``n_iterations``
+        Attributes ``best_x`` (one value per input dimension), ``best_y``,
+        ``stop_reason``, ``n_iterations``
         and the final ``train_x``/``train_y`` datasets. When ``stop_reason``
         is ``"ei_threshold"`` and ``convergence_snapshot`` is given, also
         holds the GP/EI state of the fit that triggered convergence,
@@ -243,8 +261,13 @@ def save_hdf5(
             "iteration",
             data=np.array([res["iteration"] for res in results], dtype=np.int64),
         )
-        for field in (
+        # next_point is an input point, so it gets one column per input
+        # dimension: shape (n_iterations, d).
+        history.create_dataset(
             "next_point",
+            data=np.array([res["next_point"] for res in results], dtype=np.float64),
+        ).attrs["description"] = "One row per iteration, one column per input."
+        for field in (
             "new_y",
             "current_best",
             "max_ei",
@@ -288,7 +311,7 @@ def save_hdf5(
 
         # Final: run summary and final state.
         final_group = f.create_group("final")
-        final_group.attrs["best_x"] = float(best_x)
+        final_group.attrs["best_x"] = np.asarray(best_x, dtype=np.float64)
         final_group.attrs["best_y"] = float(best_y)
         final_group.attrs["stop_reason"] = stop_reason
         final_group.attrs["n_iterations"] = n_iterations
@@ -309,8 +332,8 @@ def save_hdf5(
             final_group.attrs["converged_max_ei"] = float(
                 convergence_snapshot["max_ei"]
             )
-            final_group.attrs["converged_next_point"] = float(
-                convergence_snapshot["next_point"]
+            final_group.attrs["converged_next_point"] = np.asarray(
+                convergence_snapshot["next_point"], dtype=np.float64
             )
             for field in ("candidates", "f_mean", "f_var", "ei_scores"):
                 final_group.create_dataset(

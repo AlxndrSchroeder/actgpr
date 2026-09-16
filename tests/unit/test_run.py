@@ -45,7 +45,8 @@ class TestOptimisationRunInit:
 
     def test_stores_search_bounds(self, simple_run: OptimisationRun) -> None:
         """Test that search bounds are stored correctly."""
-        assert simple_run.search_bounds == (-3.0, 3.0)
+        assert simple_run.search_bounds == ((-3.0, 3.0),)
+        assert simple_run.n_dims == 1
 
     def test_stores_max_iterations(self, simple_run: OptimisationRun) -> None:
         """Test that max_iterations is stored correctly."""
@@ -136,7 +137,8 @@ class TestOptimisationRunInit:
         r = repr(simple_run)
         assert "OptimisationRun" in r
         assert "fit=training" in r
-        assert "bounds=(-3.0, 3.0)" in r
+        assert "bounds=[(-3.0, 3.0)]" in r
+        assert "n_dims=1" in r
         assert "max_iter=10" in r
 
     def test_config_dict_records_objective_repr(
@@ -274,7 +276,7 @@ class TestPlotHistory:
         title = fig._suptitle.get_text()
 
         assert axes.shape == (2, 2)
-        assert f"best_x: {result['best_x']:.4f}" in title
+        assert f"best_x: {result['best_x'][0]:.4f}" in title
         assert result["stop_reason"] in title
 
     def test_matches_the_plot_read_back_from_disk(self, tmp_path: Path) -> None:
@@ -364,7 +366,7 @@ class TestCustomObjective:
 
         assert not isinstance(simulation, ObjectiveFn)
         assert simulation.calls > 2  # the loop kept calling it
-        assert abs(result["best_x"] - 1.0) < 0.5  # and it actually optimised
+        assert abs(result["best_x"][0] - 1.0) < 0.5  # and it actually optimised
 
         # It also lands in the MRR record, via repr() like any Objective.
         config = json.loads((run.run_dir / "config.json").read_text())
@@ -435,7 +437,7 @@ class TestOptimisationRunRun:
         log_text = (run_dir / "run.log").read_text()
 
         assert "Finished" in log_text
-        assert f"best_x={result['best_x']:.6f}" in log_text
+        assert f"best_x={result['best_x'][0]:.6f}" in log_text
         assert f"best_y={result['best_y']:.6f}" in log_text
         assert result["stop_reason"] in log_text
 
@@ -444,10 +446,15 @@ class TestOptimisationRunRun:
         result = simple_run.run()
         assert isinstance(result["best_y"], float)
 
-    def test_best_x_is_float(self, simple_run: OptimisationRun) -> None:
-        """Test that best_x is a Python float."""
+    def test_best_x_is_a_tuple_with_one_float_per_dimension(
+        self, simple_run: OptimisationRun
+    ) -> None:
+        """Test that best_x is an input point, here with one coordinate."""
         result = simple_run.run()
-        assert isinstance(result["best_x"], float)
+
+        assert isinstance(result["best_x"], tuple)
+        assert len(result["best_x"]) == 1
+        assert isinstance(result["best_x"][0], float)
 
     def test_best_y_is_non_negative(self, simple_run: OptimisationRun) -> None:
         """Test scientific invariant: x² is always non-negative."""
@@ -1135,3 +1142,171 @@ class TestOptimisationRunWithTraining:
     def test_repr_shows_training_mode(self, simple_run: OptimisationRun) -> None:
         """Test that __repr__ shows fit=training."""
         assert "fit=training" in repr(simple_run)
+
+
+def _bowl_2d(x1: float, x2: float) -> float:
+    """Return a 2D bowl with its minimum at (1.0, -0.5)."""
+    return (x1 - 1.0) ** 2 + (x2 + 0.5) ** 2
+
+
+class TestMultiDimensionalRun:
+    """Tests for runs with more than one input dimension."""
+
+    def test_dimension_is_the_number_of_search_bound_pairs(self) -> None:
+        """Test that three (lo, hi) pairs make a 3D run."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-1.0, 1.0), (-2.0, 2.0), (0.0, 3.0)],
+            initial_train_x=[[0.0, 0.0, 1.0], [0.5, -1.0, 2.0]],
+            max_iterations=3,
+            ei_threshold=1e-9,
+        )
+
+        assert run.n_dims == 3
+        assert run.train_x.shape == (2, 3)
+        # The default Objective sums squared coordinates, point by point.
+        assert run.train_y.tolist() == [1.0, 5.25]
+
+    def test_finds_the_minimum_of_a_2d_bowl(self) -> None:
+        """Test that a 2D run converges near the known minimum."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(_bowl_2d),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+            initial_train_x=[[-2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]],
+            max_iterations=15,
+            ei_threshold=1e-6,
+            lengthscale=2.0,
+        )
+        result = run.run()
+
+        best_x1, best_x2 = result["best_x"]
+        assert result["train_x"].shape[1] == 2
+        assert abs(best_x1 - 1.0) < 0.3
+        assert abs(best_x2 + 0.5) < 0.3
+        assert result["best_y"] < 0.1
+
+    def test_objective_receives_one_argument_per_dimension(self) -> None:
+        """Test that a user's own 3-input class is called as evaluate(x1, x2, x3)."""
+
+        class ThreeInputSimulation:
+            """A user Objective that records how it was called."""
+
+            def __init__(self) -> None:
+                self.calls: list[tuple[float, ...]] = []
+
+            def evaluate(self, x1: float, x2: float, x3: float) -> float:
+                self.calls.append((x1, x2, x3))
+                return x1**2 + x2**2 + x3**2
+
+        simulation = ThreeInputSimulation()
+        OptimisationRun.without_training(
+            objective=simulation,
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-1.0, 1.0)] * 3,
+            initial_train_x=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+            max_iterations=2,
+            ei_threshold=1e-9,
+            n_candidates=64,
+        ).run()
+
+        assert simulation.calls[:2] == [(0.1, 0.2, 0.3), (0.4, 0.5, 0.6)]
+        assert len(simulation.calls) > 2
+        assert all(len(call) == 3 for call in simulation.calls)
+
+    def test_flat_initial_points_are_rejected_for_several_dimensions(self) -> None:
+        """Test that [x1, x2] is not guessed at when the run is 2D."""
+        with pytest.raises(ValueError, match="one row per point"):
+            OptimisationRun.without_training(
+                objective=ObjectiveFn(_bowl_2d),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+                initial_train_x=[0.0, 1.0],
+                max_iterations=3,
+                ei_threshold=1e-9,
+            )
+
+    def test_initial_point_with_the_wrong_dimension_is_rejected(self) -> None:
+        """Test that 3D starting points for a 2D run fail before evaluating."""
+        with pytest.raises(ValueError, match="Expected 2 coordinates"):
+            OptimisationRun.without_training(
+                objective=ObjectiveFn(_bowl_2d),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+                initial_train_x=[[0.0, 1.0, 2.0]],
+                max_iterations=3,
+                ei_threshold=1e-9,
+            )
+
+    def test_one_lengthscale_per_dimension_is_used(self) -> None:
+        """Test that a per-dimension lengthscale reaches the surrogate."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(_bowl_2d),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+            initial_train_x=[[-2.0, -2.0], [2.0, 2.0]],
+            max_iterations=1,
+            ei_threshold=1e-9,
+            n_candidates=64,
+            lengthscale=[0.5, 3.0],
+        )
+        run.run()
+
+        assert run.surrogate.hyperparameters()["lengthscale"] == pytest.approx(
+            (0.5, 3.0)
+        )
+
+    def test_repeated_runs_are_identical(self) -> None:
+        """Test that the seeded Sobol candidates make a 2D run reproducible."""
+
+        def one_run() -> dict:
+            torch.manual_seed(SEED)
+            return OptimisationRun.with_training(
+                objective=ObjectiveFn(_bowl_2d),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+                initial_train_x=[[-2.0, -2.0], [2.0, 2.0]],
+                max_iterations=4,
+                ei_threshold=1e-9,
+                n_candidates=128,
+                training_iter=10,
+            ).run()
+
+        assert torch.equal(one_run()["train_x"], one_run()["train_x"])
+
+    def test_iteration_slider_refuses_a_2d_run(self) -> None:
+        """Test that plot_iterations() says why it cannot draw this run."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(_bowl_2d),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+            initial_train_x=[[-2.0, -2.0], [2.0, 2.0]],
+            max_iterations=2,
+            ei_threshold=1e-9,
+            n_candidates=64,
+        )
+        run.run()
+
+        with pytest.raises(ValueError, match="2 input dimensions"):
+            run.plot_iterations(show=False)
+
+    def test_metrics_figure_works_for_a_2d_run(self) -> None:
+        """Test that plot_metrics() is dimension independent."""
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(_bowl_2d),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+            initial_train_x=[[-2.0, -2.0], [2.0, 2.0]],
+            max_iterations=2,
+            ei_threshold=1e-9,
+            n_candidates=64,
+        )
+        result = run.run()
+
+        fig, axes = run.plot_metrics(show=False)
+        title = fig._suptitle.get_text()
+
+        assert axes.shape == (2, 2)
+        best_x1, best_x2 = result["best_x"]
+        assert f"best_x: ({best_x1:.4f}, {best_x2:.4f})" in title

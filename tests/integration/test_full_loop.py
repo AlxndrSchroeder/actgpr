@@ -59,7 +59,7 @@ class TestFullLoop:
         """Test that the loop closes in on the x² minimum at x=0."""
         result = make_quadratic_run(tmp_path).run()
 
-        assert abs(result["best_x"]) < 0.5
+        assert abs(result["best_x"][0]) < 0.5
         assert result["best_y"] < 0.5
 
     def test_result_consistent_with_training_data(self, tmp_path: Path) -> None:
@@ -67,9 +67,9 @@ class TestFullLoop:
         result = make_quadratic_run(tmp_path).run()
 
         best_idx = torch.argmin(result["train_y"])
-        assert result["best_x"] == result["train_x"][best_idx].item()
+        assert result["best_x"] == tuple(result["train_x"][best_idx].tolist())
         assert result["best_y"] == result["train_y"][best_idx].item()
-        assert result["train_x"].numel() == result["train_y"].numel()
+        assert result["train_x"].shape[0] == result["train_y"].shape[0]
 
     def test_run_is_deterministic(self, tmp_path: Path) -> None:
         """Test that two seeded runs produce identical training data."""
@@ -121,7 +121,9 @@ class TestMrrArtifacts:
         config = json.loads((directory / "config.json").read_text())
 
         assert config["fit_mode"] == "notraining"
-        assert config["search_bounds"] == [-4.0, 4.0]
+        assert config["search_bounds"] == [[-4.0, 4.0]]
+        assert config["n_dims"] == 1
+        assert config["candidate_seed"] == 25
         assert config["max_iterations"] == 8
         assert config["lengthscale"] == 1.0
         assert config["objective"] == "ObjectiveFn(function=sum(x_i^2))"
@@ -253,3 +255,108 @@ class TestMrrArtifactsOnCrash:
             # iterations — the point that triggered the crash was never
             # appended to training data.
             assert len(f["final/train_x"]) == 4
+
+
+def _bowl_3d(x1: float, x2: float, x3: float) -> float:
+    """Return a 3D bowl with its minimum at (0.5, -1.0, 0.0)."""
+    return (x1 - 0.5) ** 2 + (x2 + 1.0) ** 2 + x3**2
+
+
+BOUNDS_3D = [(-2.0, 2.0), (-3.0, 1.0), (-1.0, 1.0)]
+
+
+@pytest.fixture(scope="module")
+def finished_3d(tmp_path_factory: pytest.TempPathFactory):
+    """Run a seeded 3D optimisation once and share it across the tests."""
+    torch.manual_seed(SEED)
+    run = OptimisationRun.with_training(
+        objective=ObjectiveFn(_bowl_3d),
+        surrogate=GPyTorchSurrogate(),
+        search_bounds=BOUNDS_3D,
+        initial_train_x=[[-1.5, 0.5, 0.8], [1.5, -2.5, -0.8], [0.0, 0.0, 0.0]],
+        max_iterations=12,
+        ei_threshold=1e-6,
+        n_candidates=256,
+        training_iter=30,
+        run_dir=tmp_path_factory.mktemp("results"),
+    )
+    return run, run.run()
+
+
+class TestThreeDimensionalRun:
+    """A 3-input run end to end, through the MRR record and back out."""
+
+    def test_converges_near_the_known_minimum(self, finished_3d) -> None:
+        """Test that the run gets close to (0.5, -1.0, 0.0)."""
+        _, result = finished_3d
+
+        assert len(result["best_x"]) == 3
+        assert result["best_y"] < 0.2
+
+    def test_every_evaluated_point_is_inside_its_bounds(self, finished_3d) -> None:
+        """Test that no coordinate ever left its own interval."""
+        _, result = finished_3d
+
+        for dim, (lo, hi) in enumerate(BOUNDS_3D):
+            assert torch.all(result["train_x"][:, dim] >= lo)
+            assert torch.all(result["train_x"][:, dim] <= hi)
+
+    def test_writes_all_five_artifacts_into_a_3d_named_directory(
+        self, finished_3d
+    ) -> None:
+        """Test the MRR record exists and the folder name states the dimension."""
+        run, _ = finished_3d
+
+        assert "_3d_" in run.run_dir.name
+        for artifact in MRR_ARTIFACTS:
+            assert (run.run_dir / artifact).exists()
+
+    def test_config_and_meta_describe_three_inputs(self, finished_3d) -> None:
+        """Test that the JSON artifacts carry per-dimension values."""
+        run, result = finished_3d
+        config = json.loads((run.run_dir / "config.json").read_text())
+        meta = json.loads((run.run_dir / "meta.json").read_text())
+
+        assert config["n_dims"] == 3
+        assert config["search_bounds"] == [list(pair) for pair in BOUNDS_3D]
+        assert np.array(config["initial_train_x"]).shape == (3, 3)
+        assert meta["output_summary"]["best_x"] == pytest.approx(list(result["best_x"]))
+
+    def test_results_h5_has_one_column_per_input(self, finished_3d) -> None:
+        """Test that every input-shaped dataset is (rows, 3)."""
+        run, result = finished_3d
+        n_iter = result["n_iterations"]
+
+        with h5py.File(run.run_dir / "results.h5", "r") as f:
+            assert f.attrs["n_dims"] == 3
+            evaluated = f["history/iteration"].shape[0]
+            assert evaluated in (n_iter, n_iter - 1)
+            assert f["history/next_point"].shape == (evaluated, 3)
+            assert f["history/lengthscale"].shape == (evaluated, 3)
+            assert f["history/outputscale"].shape == (evaluated, 1)
+            assert f["final/train_x"].shape == (result["train_x"].shape[0], 3)
+            assert list(f["final"].attrs["best_x"]) == pytest.approx(
+                list(result["best_x"])
+            )
+            first = f["iterations/iter_001"]
+            assert first["candidates"].shape == (256, 3)
+            assert first["f_mean"].shape == (256,)
+
+    def test_metrics_figure_rebuilds_from_the_record(self, finished_3d) -> None:
+        """Test that load_metrics works on a 3D run directory."""
+        from actgpr.plotting import load_metrics
+
+        run, result = finished_3d
+        fig, axes = load_metrics(run.run_dir, show=False)
+
+        assert axes.shape == (2, 2)
+        assert "best_x: (" in fig._suptitle.get_text()
+
+    def test_iteration_slider_refuses_the_record(self, finished_3d) -> None:
+        """Test that load_iterations explains why it cannot draw 3D."""
+        from actgpr.plotting import load_iterations
+
+        run, _ = finished_3d
+
+        with pytest.raises(ValueError, match="3 input dimensions"):
+            load_iterations(run.run_dir, show=False)

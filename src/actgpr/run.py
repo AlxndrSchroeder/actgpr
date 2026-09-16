@@ -7,6 +7,7 @@ function, evaluate objective, repeat until convergence.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
 from actgpr import mrr
-from actgpr._points import format_values
+from actgpr._points import as_points, format_values, parse_search_bounds
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
 from actgpr.plotting import METRIC_FIELDS, _draw_iteration_slider, _draw_metrics
@@ -29,6 +30,11 @@ class OptimisationRun:
 
     Coordinates the ObjectiveFn, Surrogate, and Acquisition components
     to iteratively find the minimum of the ObjectiveFn within the search bounds.
+
+    The number of input dimensions is set by ``search_bounds``: one
+    ``(lo, hi)`` pair per input. Every input point, including each entry of
+    ``initial_train_x``, then has one coordinate per input, and the
+    Objective is called with those coordinates as separate arguments.
 
     The loop terminates when either the maximum EI score falls below
     ei_threshold (nothing left to gain) or the number of optimisation
@@ -58,8 +64,8 @@ class OptimisationRun:
         self,
         objective: Objective,
         surrogate: GPyTorchSurrogate,
-        search_bounds: tuple[float, float],
-        initial_train_x: torch.Tensor | list[float],
+        search_bounds: Sequence[float] | Sequence[Sequence[float]],
+        initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
@@ -69,7 +75,7 @@ class OptimisationRun:
         *,
         _train_hyperparameters: bool = True,
         _training_iter: int = 50,
-        _lengthscale: float = 1.0,
+        _lengthscale: float | Sequence[float] = 1.0,
         _outputscale: float = 1.0,
     ) -> None:
         """Initialize the OptimisationRun.
@@ -87,13 +93,19 @@ class OptimisationRun:
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
-        search_bounds : tuple[float, float]
-            The closed interval (lo, hi) within which input points are considered.
-        initial_train_x : torch.Tensor or list[float] of shape (n,)
-            The initial input points to seed the optimisation loop. Cast to
-            float64 regardless of input dtype, so integer-valued inputs
-            (e.g. [1, 2]) don't silently truncate later fractional points
-            appended during the optimisation loop.
+        search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
+            The closed interval of each input dimension, in order, e.g.
+            ``[(-3.0, 3.0), (0.0, 1.0)]`` for two inputs. The number of pairs
+            is the number of input dimensions. A single ``(lo, hi)`` pair is
+            shorthand for one input dimension.
+        initial_train_x : array-like of shape (n, d), or (n,) when d is 1
+            The initial input points to seed the optimisation loop, one row
+            per point with one coordinate per input dimension, e.g.
+            ``[[0.0, 0.5], [1.0, 0.2]]`` for two 2D points. With a single
+            input dimension a flat list such as ``[-3.0, 5.0]`` is accepted.
+            Cast to float64 regardless of input dtype, so integer-valued
+            inputs (e.g. [1, 2]) don't silently truncate later fractional
+            points appended during the optimisation loop.
         max_iterations : int
             Maximum number of active optimisation iterations, meaning GPR fit
             cycles, to execute (budget cap).
@@ -114,31 +126,32 @@ class OptimisationRun:
         Raises
         ------
         ValueError
-            If initial_train_x is empty, max_iterations is not positive,
-            search_bounds is not an increasing interval, or ei_threshold
-            is not positive.
+            If initial_train_x is empty or its points do not have one
+            coordinate per search_bounds pair, max_iterations is not
+            positive, a search_bounds pair is not an increasing interval, or
+            ei_threshold is not positive.
         """
-        # Cast to float64 regardless of input dtype (list or tensor, int or
-        # float) so later torch.cat calls never truncate fractional points.
-        self.train_x = torch.as_tensor(initial_train_x, dtype=torch.float64).clone()
+        # The number of (lo, hi) pairs is the number of input dimensions; it
+        # is the one place the dimension is decided, everything else follows.
+        self.search_bounds = parse_search_bounds(search_bounds)
+        self.n_dims = len(self.search_bounds)
 
-        if self.train_x.numel() == 0:
+        # One row per input point, float64 regardless of input dtype (list or
+        # tensor, int or float) so later torch.cat calls never truncate
+        # fractional points.
+        self.train_x = as_points(initial_train_x, n_dims=self.n_dims).clone()
+
+        if self.train_x.shape[0] == 0:
             raise ValueError("initial_train_x must contain at least one point.")
         if max_iterations <= 0:
             raise ValueError(
                 f"max_iterations ({max_iterations}) must be a positive integer."
-            )
-        if not search_bounds[0] < search_bounds[1]:
-            raise ValueError(
-                f"search_bounds lo ({search_bounds[0]}) must be < "
-                f"hi ({search_bounds[1]})"
             )
         if ei_threshold <= 0:
             raise ValueError(f"ei_threshold must be positive, got {ei_threshold}")
 
         self.objective = objective
         self.surrogate = surrogate
-        self.search_bounds = search_bounds
         self.noise = noise
         self.store_snapshots = store_snapshots
         self.max_iterations = max_iterations
@@ -153,7 +166,7 @@ class OptimisationRun:
 
         # Evaluate the objective once per initial input point to get train_y
         self.train_y = torch.tensor(
-            [self._evaluate([x]) for x in self.train_x.tolist()],
+            [self._evaluate(point) for point in self.train_x.tolist()],
             dtype=torch.float64,
         )
         assert self.train_x.shape[0] == self.train_y.shape[0], (
@@ -162,7 +175,7 @@ class OptimisationRun:
         )
 
         # Create Acquisition once; it holds a reference to the surrogate
-        self._acq = Acquisition(surrogate, search_bounds, n_candidates)
+        self._acq = Acquisition(surrogate, self.search_bounds, n_candidates)
 
         # Deferred-write accumulator for per-iteration data
         self._results: list[dict] = []
@@ -192,8 +205,8 @@ class OptimisationRun:
         cls,
         objective: Objective,
         surrogate: GPyTorchSurrogate,
-        search_bounds: tuple[float, float],
-        initial_train_x: torch.Tensor | list[float],
+        search_bounds: Sequence[float] | Sequence[Sequence[float]],
+        initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
@@ -217,10 +230,16 @@ class OptimisationRun:
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
-        search_bounds : tuple[float, float]
-            The closed interval (lo, hi) within which input points are considered.
-        initial_train_x : torch.Tensor or list[float] of shape (n,)
-            The initial input points to seed the optimisation loop.
+        search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
+            The closed interval of each input dimension, in order, e.g.
+            ``[(-3.0, 3.0), (0.0, 1.0)]`` for two inputs. The number of pairs
+            is the number of input dimensions. A single ``(lo, hi)`` pair is
+            shorthand for one input dimension.
+        initial_train_x : array-like of shape (n, d), or (n,) when d is 1
+            The initial input points to seed the optimisation loop, one row
+            per point with one coordinate per input dimension, e.g.
+            ``[[0.0, 0.5], [1.0, 0.2]]`` for two 2D points. With a single
+            input dimension a flat list such as ``[-3.0, 5.0]`` is accepted.
         max_iterations : int
             Maximum number of active optimisation iterations, meaning GPR fit
             cycles, to execute (budget cap).
@@ -266,12 +285,12 @@ class OptimisationRun:
         cls,
         objective: Objective,
         surrogate: GPyTorchSurrogate,
-        search_bounds: tuple[float, float],
-        initial_train_x: torch.Tensor | list[float],
+        search_bounds: Sequence[float] | Sequence[Sequence[float]],
+        initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
         n_candidates: int = 500,
-        lengthscale: float = 1.0,
+        lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
         store_snapshots: bool = True,
@@ -292,10 +311,16 @@ class OptimisationRun:
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
             The GP surrogate model used to approximate the objective.
-        search_bounds : tuple[float, float]
-            The closed interval (lo, hi) within which input points are considered.
-        initial_train_x : torch.Tensor or list[float] of shape (n,)
-            The initial input points to seed the optimisation loop.
+        search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
+            The closed interval of each input dimension, in order, e.g.
+            ``[(-3.0, 3.0), (0.0, 1.0)]`` for two inputs. The number of pairs
+            is the number of input dimensions. A single ``(lo, hi)`` pair is
+            shorthand for one input dimension.
+        initial_train_x : array-like of shape (n, d), or (n,) when d is 1
+            The initial input points to seed the optimisation loop, one row
+            per point with one coordinate per input dimension, e.g.
+            ``[[0.0, 0.5], [1.0, 0.2]]`` for two 2D points. With a single
+            input dimension a flat list such as ``[-3.0, 5.0]`` is accepted.
         max_iterations : int
             Maximum number of active optimisation iterations, meaning GPR fit
             cycles, to execute (budget cap).
@@ -303,8 +328,10 @@ class OptimisationRun:
             The loop stops when the maximum EI score falls below this value.
         n_candidates : int, optional
             Number of candidate points for the acquisition function, by default 500.
-        lengthscale : float, optional
-            The RBF kernel lengthscale, by default 1.0.
+        lengthscale : float or sequence of float, optional
+            The RBF kernel lengthscale, by default 1.0. A single value is
+            used for every input dimension; a sequence gives one value per
+            input dimension, in order.
         outputscale : float, optional
             The kernel outputscale (signal variance), by default 1.0.
         noise : float, optional
@@ -366,22 +393,16 @@ class OptimisationRun:
         in its own __repr__ to show up here.
         """
 
-        # TODO: for with_training runs, lengthscale/outputscale/noise are
-        #       tuned by Adam every iteration and never recorded. config.json
-        #       only stores them for without_training (where they're fixed
-        #       inputs). Record the tuned values (surrogate.model.covar_module
-        #       .base_kernel.lengthscale / .outputscale, surrogate.likelihood
-        #       .noise) so a with_training run's actual final GP hyperparameters
-        #       are part of its MRR record, not just its inputs.
-
         return {
             "objective": repr(self.objective),
             "fit_mode": "training" if self._train_hyperparameters else "notraining",
-            "search_bounds": list(self.search_bounds),
+            "n_dims": self.n_dims,
+            "search_bounds": [list(pair) for pair in self.search_bounds],
             "initial_train_x": self.train_x.tolist(),
             "max_iterations": self.max_iterations,
             "ei_threshold": self.ei_threshold,
             "n_candidates": self._acq.n_candidates,
+            "candidate_seed": self._acq.seed,
             "noise": self.noise,
             "training_iter": (
                 self._training_iter if self._train_hyperparameters else None
@@ -432,7 +453,7 @@ class OptimisationRun:
         self,
         actual_run_dir: Path,
         run_start: datetime,
-        best_x: float,
+        best_x: tuple[float, ...],
         best_y: float,
         stop_reason: str,
         n_iterations: int,
@@ -477,9 +498,12 @@ class OptimisationRun:
         dict
             A dictionary containing the optimisation results:
 
-            - "best_x": float, the input point with the lowest Objective value.
+            - "best_x": tuple of float, the input point with the lowest
+              Objective value, one coordinate per input dimension (a
+              1-tuple for a single input).
             - "best_y": float, the lowest Objective value found.
-            - "train_x": torch.Tensor, all evaluated input points.
+            - "train_x": torch.Tensor of shape (n, d), all evaluated input
+              points, one row each.
             - "train_y": torch.Tensor, all Objective outputs.
             - "n_iterations": int, number of loop iterations executed.
             - "stop_reason": str, "ei_threshold" if EI dropped below
@@ -510,6 +534,7 @@ class OptimisationRun:
                 ei_threshold=self.ei_threshold,
                 max_iterations=self.max_iterations,
                 noise=self.noise,
+                n_dims=self.n_dims,
                 lengthscale=(
                     self._lengthscale if not self._train_hyperparameters else None
                 ),
@@ -528,7 +553,7 @@ class OptimisationRun:
             fit_mode = "training" if self._train_hyperparameters else "fixed"
             logger.info(
                 f"Starting optimisation ({fit_mode}): "
-                f"{self.train_x.numel()} initial points, "
+                f"{self.train_x.shape[0]} initial points in {self.n_dims}D, "
                 f"max_iterations={self.max_iterations}, "
                 f"ei_threshold={self.ei_threshold}"
             )
@@ -537,12 +562,12 @@ class OptimisationRun:
             self._stop_reason = stop_reason
 
             best_idx = torch.argmin(self.train_y)
-            best_x = self.train_x[best_idx].item()
+            best_x = tuple(self.train_x[best_idx].tolist())
             best_y = self.train_y[best_idx].item()
 
             logger.info(
                 f"Finished after {n_iterations} iterations ({stop_reason}): "
-                f"best_x={best_x:.6f}, best_y={best_y:.6f}"
+                f"best_x={format_values(best_x, '.6f')}, best_y={best_y:.6f}"
             )
 
             fitted = self._fitted_hyperparameters()
@@ -577,7 +602,7 @@ class OptimisationRun:
             # losing just the incomplete iteration.
             if actual_run_dir is not None:
                 crash_best_idx = torch.argmin(self.train_y)
-                crash_best_x = self.train_x[crash_best_idx].item()
+                crash_best_x = tuple(self.train_x[crash_best_idx].tolist())
                 crash_best_y = self.train_y[crash_best_idx].item()
                 self._write_mrr_record(
                     actual_run_dir,
@@ -615,7 +640,7 @@ class OptimisationRun:
 
             # 2. Compute current best and find the next input point
             current_best = self.train_y.min().item()
-            next_point = self._acq.find_next_input_point(current_best)[0]
+            next_point = self._acq.find_next_input_point(current_best)
             max_ei = self._acq.ei_scores.max().item()
 
             # 3. Check EI convergence before evaluating the new point
@@ -650,7 +675,7 @@ class OptimisationRun:
                 break
 
             # 4. Evaluate objective at the next point
-            new_y = self._evaluate([next_point])
+            new_y = self._evaluate(list(next_point))
 
             # 5. Validation metrics
             # improvement Δᵢ = y_best before this iteration − y_best after it;
@@ -665,7 +690,7 @@ class OptimisationRun:
             logger.info(
                 f"Iteration {n_iterations} | "
                 f"current_best: {current_best:.4f} | "
-                f"next_point: {next_point:.4f} | "
+                f"next_point: {format_values(next_point)} | "
                 f"max_ei: {max_ei:.6f} | "
                 f"pred_error: {prediction_error:.4f} | "
                 f"improvement: {improvement:.4f}"
@@ -766,7 +791,7 @@ class OptimisationRun:
                 field: [record[field] for record in self._results]
                 for field in METRIC_FIELDS
             },
-            best_x=self.train_x[best_index].item(),
+            best_x=tuple(self.train_x[best_index].tolist()),
             best_y=self.train_y[best_index].item(),
             stop_reason=self._stop_reason,
             fitted_hyperparameters=self._fitted_hyperparameters(),
@@ -850,8 +875,9 @@ class OptimisationRun:
         return (
             f"OptimisationRun("
             f"fit={fit_mode}, "
-            f"bounds={self.search_bounds}, "
+            f"n_dims={self.n_dims}, "
+            f"bounds={list(self.search_bounds)}, "
             f"max_iter={self.max_iterations}, "
             f"ei_thresh={self.ei_threshold}, "
-            f"n_points={self.train_x.numel()})"
+            f"n_points={self.train_x.shape[0]})"
         )

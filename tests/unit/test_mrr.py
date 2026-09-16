@@ -102,7 +102,7 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=end,
-            best_x=1.0,
+            best_x=(1.0,),
             best_y=-0.5,
             n_iterations=5,
             stop_reason="ei_threshold",
@@ -129,7 +129,7 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=start,
-            best_x=1.0,
+            best_x=(1.0,),
             best_y=-0.5,
             n_iterations=5,
             stop_reason="ei_threshold",
@@ -149,14 +149,14 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=start,
-            best_x=1.23,
+            best_x=(1.23,),
             best_y=-0.45,
             n_iterations=10,
             stop_reason="max_iterations",
         )
 
         loaded = json.loads((tmp_path / "meta.json").read_text())
-        assert loaded["output_summary"]["best_x"] == 1.23
+        assert loaded["output_summary"]["best_x"] == [1.23]
         assert loaded["output_summary"]["best_y"] == -0.45
         assert loaded["output_summary"]["n_iterations"] == 10
         assert loaded["output_summary"]["stop_reason"] == "max_iterations"
@@ -188,7 +188,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -202,7 +202,7 @@ class TestSaveHdf5:
             assert f.attrs["fit_mode"] == "training"
 
             assert "final" in f
-            assert f["final"].attrs["best_x"] == 0.5
+            assert list(f["final"].attrs["best_x"]) == [0.5]
             assert "train_x" in f["final"]
             assert len(f["final/train_x"]) == 2
 
@@ -215,7 +215,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -266,7 +266,7 @@ class TestSaveHdf5:
             store_snapshots=True,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -294,7 +294,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="ei_threshold",
             n_iterations=1,
@@ -334,7 +334,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.zeros(3, 3),
             final_train_y=torch.zeros(3),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=2,
@@ -361,7 +361,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
