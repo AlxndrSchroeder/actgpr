@@ -81,7 +81,8 @@ class OptimisationRun:
         ----------
         objective : Objective
             The Objective to minimise: any object exposing
-            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            ``evaluate(*x) -> float``, called once per input point with that
+            point's coordinates. Its type is never
             checked, only that method is called, so a class of your own
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
@@ -150,13 +151,14 @@ class OptimisationRun:
         self._lengthscale = _lengthscale
         self._outputscale = _outputscale
 
-        # Evaluate the objective at initial points to get train_y
+        # Evaluate the objective once per initial input point to get train_y
         self.train_y = torch.tensor(
-            self.objective.evaluate(*self.train_x.tolist()), dtype=self.train_x.dtype
+            [self._evaluate([x]) for x in self.train_x.tolist()],
+            dtype=torch.float64,
         )
-        assert self.train_x.numel() == self.train_y.numel(), (
-            f"Objective returned {self.train_y.numel()} outputs for "
-            f"{self.train_x.numel()} inputs"
+        assert self.train_x.shape[0] == self.train_y.shape[0], (
+            f"Got {self.train_y.shape[0]} outputs for "
+            f"{self.train_x.shape[0]} input points"
         )
 
         # Create Acquisition once; it holds a reference to the surrogate
@@ -209,7 +211,8 @@ class OptimisationRun:
         ----------
         objective : Objective
             The Objective to minimise: any object exposing
-            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            ``evaluate(*x) -> float``, called once per input point with that
+            point's coordinates. Its type is never
             checked, only that method is called, so a class of your own
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
@@ -283,7 +286,8 @@ class OptimisationRun:
         ----------
         objective : Objective
             The Objective to minimise: any object exposing
-            ``evaluate(*x) -> tuple[float, ...]``. Its type is never
+            ``evaluate(*x) -> float``, called once per input point with that
+            point's coordinates. Its type is never
             checked, only that method is called, so a class of your own
             wrapping a simulation works as well as an ``ObjectiveFn``.
         surrogate : GPyTorchSurrogate
@@ -390,6 +394,21 @@ class OptimisationRun:
             ),
             "store_snapshots": self.store_snapshots,
         }
+
+    def _evaluate(self, point: list[float]) -> float:
+        """Evaluate the Objective at one input point, given its coordinates."""
+        output = self.objective.evaluate(*point)
+        try:
+            return float(output)
+        except (TypeError, ValueError) as exc:
+            # The most likely cause is an Objective written for actgpr 0.3,
+            # whose evaluate() took several points and returned a tuple.
+            raise TypeError(
+                f"Objective.evaluate() must return one float for one input "
+                f"point, got {type(output).__name__} {output!r}. Since actgpr "
+                f"0.4, evaluate(*x) receives the coordinates of a single input "
+                f"point and returns its single output."
+            ) from exc
 
     def _fitted_hyperparameters(self) -> dict[str, tuple[float, ...]] | None:
         """Return the surrogate's final hyperparameters, or None if unavailable.
@@ -631,7 +650,7 @@ class OptimisationRun:
                 break
 
             # 4. Evaluate objective at the next point
-            new_y = self.objective.evaluate(next_point)[0]
+            new_y = self._evaluate([next_point])
 
             # 5. Validation metrics
             # improvement Δᵢ = y_best before this iteration − y_best after it;

@@ -167,7 +167,7 @@ class TestOptimisationRunInit:
         )
         assert (
             run._config_dict()["objective"]
-            == "ObjectiveFn(function=x^2, jitter=0.1, seed=25)"
+            == "ObjectiveFn(function=sum(x_i^2), jitter=0.1, seed=25)"
         )
 
 
@@ -345,9 +345,9 @@ class TestCustomObjective:
             def __init__(self) -> None:
                 self.calls = 0
 
-            def evaluate(self, *x: float) -> tuple[float, ...]:
-                self.calls += len(x)
-                return tuple((v - 1.0) ** 2 for v in x)
+            def evaluate(self, x: float) -> float:
+                self.calls += 1
+                return (x - 1.0) ** 2
 
         simulation = MySimulation()
         run = OptimisationRun.without_training(
@@ -369,6 +369,30 @@ class TestCustomObjective:
         # It also lands in the MRR record, via repr() like any Objective.
         config = json.loads((run.run_dir / "config.json").read_text())
         assert "MySimulation" in config["objective"]
+
+    def test_an_objective_returning_a_tuple_gets_a_migration_hint(self) -> None:
+        """Test that an Objective written for actgpr 0.3 fails clearly.
+
+        Before 0.4, evaluate() took several points and returned a tuple. An
+        unchanged user class must not fail with an opaque error from deep
+        inside torch; the message has to name the change.
+        """
+
+        class OldStyleSimulation:
+            """An Objective following the pre-0.4 batch contract."""
+
+            def evaluate(self, *x: float) -> tuple[float, ...]:
+                return tuple(v**2 for v in x)
+
+        with pytest.raises(TypeError, match="Since actgpr 0.4"):
+            OptimisationRun.without_training(
+                objective=OldStyleSimulation(),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=(-3.0, 5.0),
+                initial_train_x=[-3.0, 5.0],
+                max_iterations=3,
+                ei_threshold=1e-9,
+            )
 
 
 class TestOptimisationRunRun:
