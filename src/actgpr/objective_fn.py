@@ -72,8 +72,8 @@ class ObjectiveFn:
 
     Public Methods
     --------------
-    evaluate(*x)
-        Evaluate the function at one input point.
+    evaluate(x1, ..., xd)
+        Evaluate the function at one input point with d coordinates.
     """
 
     def __init__(

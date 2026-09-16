@@ -844,6 +844,9 @@ class OptimisationRun:
         RuntimeError
             If the run has not been executed yet, or if it was executed
             with store_snapshots=False so no snapshots were recorded.
+        ValueError
+            If the run has more than one input dimension; its surrogate
+            cannot be drawn as a curve. Use ``plot_metrics()`` for such runs.
         """
         # Distinguished from the store_snapshots case below: both leave no
         # snapshots to browse, but telling someone who has not called run()

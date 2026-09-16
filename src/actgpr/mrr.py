@@ -207,7 +207,7 @@ def save_hdf5(
         dimension), plus ``lengthscale``/``outputscale``/``noise`` when the
         surrogate reports them, giving the hyperparameters behind each
         iteration's fit (lengthscale has one column per input dimension).
-        This is the single authoritative record of the run's scalar history.
+        This is the single authoritative record of the run's history.
         Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
     ``iterations/iter_NNN/``
@@ -251,11 +251,12 @@ def save_hdf5(
             if value is not None:
                 f.attrs[key] = value
 
-        # History: per-iteration scalar series sharing one iteration index.
-        # Single authoritative record of the run's scalar history.
+        # History: per-iteration series sharing one iteration index.
+        # Single authoritative record of the run's history.
         history = f.create_group("history")
         history.attrs["description"] = (
-            "Per-iteration scalar series; align by the 'iteration' dataset."
+            "Per-iteration series, one row per iteration; align by the "
+            "'iteration' dataset."
         )
         history.create_dataset(
             "iteration",

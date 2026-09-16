@@ -91,22 +91,24 @@ def _plot_gp(
     """Plot GP predictions from raw tensors.
 
     This is the core GP plotting function. All other GP plot functions
-    delegate to this one.
+    delegate to this one. It draws a problem with one input dimension, so
+    input points are passed as their single coordinate.
 
     Parameters
     ----------
     candidates : torch.Tensor of shape (m,)
-        The x-axis grid of input points.
+        The x-axis grid: the single coordinate of each candidate point.
     f_mean : torch.Tensor of shape (m,)
         The GP posterior mean at each candidate point.
     f_var : torch.Tensor of shape (m,)
         The GP posterior variance at each candidate point.
     train_x : torch.Tensor of shape (n,)
-        The training input points.
+        The single coordinate of each training input point.
     train_y : torch.Tensor of shape (n,)
         The training output values.
     next_point : float or None, optional
-        The selected next input point. If provided, a vertical line is drawn.
+        The single coordinate of the selected next input point. If provided,
+        a vertical line is drawn.
     ax : matplotlib.axes.Axes or None, optional
         An existing axes to draw on. If None, a new figure and axes are created.
     show : bool, optional
@@ -179,10 +181,12 @@ def _plot_acquisition(
 ) -> tuple[Figure, Axes]:
     """Plot the Expected Improvement acquisition landscape.
 
+    Draws a problem with one input dimension, like ``_plot_gp``.
+
     Parameters
     ----------
     candidates : torch.Tensor of shape (m,)
-        The candidate input points that were scored.
+        The single coordinate of each candidate point that was scored.
     ei_scores : torch.Tensor of shape (m,)
         The EI score for each candidate point.
     next_point : float or None, optional
@@ -633,6 +637,9 @@ def load_iterations(
         If run_dir does not contain a results.h5 file.
     RuntimeError
         If the run was executed without ``store_snapshots``.
+    ValueError
+        If the run has more than one input dimension; its surrogate cannot
+        be drawn as a curve. Use ``load_metrics`` for such runs.
     """
     snapshots = _load_iteration_snapshots(run_dir)
 
