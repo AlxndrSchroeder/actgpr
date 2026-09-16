@@ -57,7 +57,6 @@ class Acquisition:
         self.candidates: torch.Tensor | None = None
         self.f_mean: torch.Tensor | None = None
         self.f_var: torch.Tensor | None = None
-        self.f_covar: torch.Tensor | None = None
         self.ei_scores: torch.Tensor | None = None
         # The surrogate's posterior mean at the returned next_point itself
         # (post zoom-refinement), distinct from f_mean, which covers only
@@ -173,7 +172,6 @@ class Acquisition:
         preds = self.surrogate.predict(self.candidates)
         self.f_mean = preds["f_mean"]
         self.f_var = preds["f_var"]
-        self.f_covar = preds["f_covar"]
 
         assert isinstance(self.f_mean, torch.Tensor)
         assert isinstance(self.f_var, torch.Tensor)

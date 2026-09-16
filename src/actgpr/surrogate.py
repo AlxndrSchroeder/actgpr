@@ -244,15 +244,16 @@ class GPyTorchSurrogate:
             A dictionary containing prediction components:
 
             - "f_preds": predictive distribution (MultivariateNormal) of the
-              latent function f(test_x).
+              latent function f(test_x). Its full covariance matrix is
+              available on demand as ``f_preds.covariance_matrix``, shape
+              (m, m). It is not computed eagerly, since it grows with m²
+              and the optimisation loop needs only the diagonal.
             - "observed_pred": predictive distribution (MultivariateNormal) of
               observed targets y(test_x) = f(test_x) + noise.
             - "f_mean": predicted posterior mean of the latent function,
               torch.Tensor of shape (m,).
             - "f_var": predicted posterior variance of the latent function,
               torch.Tensor of shape (m,).
-            - "f_covar": predicted posterior covariance matrix,
-              torch.Tensor of shape (m, m).
             - "f_samples": samples drawn from the latent function's predictive
               posterior, torch.Tensor of shape (n_samples, m). Only present
               when n_samples > 0.
@@ -279,7 +280,6 @@ class GPyTorchSurrogate:
 
             f_mean = f_preds.mean
             f_var = f_preds.variance
-            f_covar = f_preds.covariance_matrix
             f_samples = (
                 f_preds.sample(sample_shape=torch.Size([n_samples]))
                 if n_samples > 0
@@ -290,14 +290,12 @@ class GPyTorchSurrogate:
         assert torch.all(torch.isfinite(f_mean)), "f_mean contains non-finite values"
         assert torch.all(f_var >= 0), "f_var contains negative variance values"
         assert torch.all(torch.isfinite(f_var)), "f_var contains non-finite values"
-        assert torch.all(torch.isfinite(f_covar)), "f_covar contains non-finite values"
 
         preds: dict[str, torch.Tensor | gpytorch.distributions.MultivariateNormal] = {
             "f_preds": f_preds,
             "observed_pred": observed_pred,
             "f_mean": f_mean,
             "f_var": f_var,
-            "f_covar": f_covar,
         }
 
         if f_samples is not None:

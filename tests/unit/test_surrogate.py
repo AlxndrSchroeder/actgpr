@@ -284,6 +284,19 @@ class TestGPyTorchSurrogatePredict:
         with pytest.raises(RuntimeError, match="fitted"):
             model.predict(test_x)
 
+    def test_predict_omits_the_dense_covariance(
+        self,
+        fitted_model: GPyTorchSurrogate,
+    ) -> None:
+        """Test that predict() does not build the (m, m) covariance eagerly.
+
+        It grows with the square of the candidate count and nothing in the
+        optimisation loop reads it; at 32768 candidates it took minutes.
+        """
+        preds = fitted_model.predict(torch.linspace(0, 1, 10))
+
+        assert "f_covar" not in preds
+
     def test_predict_returns_expected_keys(
         self,
         fitted_model: GPyTorchSurrogate,
@@ -297,7 +310,6 @@ class TestGPyTorchSurrogatePredict:
             "observed_pred",
             "f_mean",
             "f_var",
-            "f_covar",
         }
         assert set(preds.keys()) == expected_keys
 
@@ -323,7 +335,7 @@ class TestGPyTorchSurrogatePredict:
 
         assert preds["f_mean"].shape == (n_test,)
         assert preds["f_var"].shape == (n_test,)
-        assert preds["f_covar"].shape == (n_test, n_test)
+        assert preds["f_preds"].covariance_matrix.shape == (n_test, n_test)
         assert preds["f_samples"].shape == (n_samples, n_test)
 
     def test_predict_f_mean_is_finite(
@@ -350,11 +362,11 @@ class TestGPyTorchSurrogatePredict:
         self,
         fitted_model: GPyTorchSurrogate,
     ) -> None:
-        """Test scientific invariant: f_covar must be a symmetric matrix."""
+        """Test scientific invariant: the posterior covariance is symmetric."""
         test_x = torch.linspace(0, 1, 10)
-        preds = fitted_model.predict(test_x)
+        f_covar = fitted_model.predict(test_x)["f_preds"].covariance_matrix
 
-        assert torch.allclose(preds["f_covar"], preds["f_covar"].T, atol=1e-5)
+        assert torch.allclose(f_covar, f_covar.T, atol=1e-5)
 
     # Predicting at exactly the training inputs is the point of this test;
     # gpytorch's "did you forget model.train()?" heuristic is a false positive.
@@ -402,11 +414,11 @@ class TestGPyTorchSurrogatePredict:
         self,
         fitted_model: GPyTorchSurrogate,
     ) -> None:
-        """Test scientific invariant: f_covar eigenvalues must be non-negative."""
+        """Test scientific invariant: posterior covariance eigenvalues are >= 0."""
         test_x = torch.linspace(0, 1, 10)
-        preds = fitted_model.predict(test_x)
+        f_covar = fitted_model.predict(test_x)["f_preds"].covariance_matrix
 
-        eigenvalues = torch.linalg.eigvalsh(preds["f_covar"])
+        eigenvalues = torch.linalg.eigvalsh(f_covar)
         assert torch.all(
             eigenvalues >= -1e-5
         ), f"f_covar has negative eigenvalues: {eigenvalues[eigenvalues < -1e-5]}"
