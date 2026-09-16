@@ -100,8 +100,10 @@ class Acquisition:
     def _candidates(self, lower: torch.Tensor, upper: torch.Tensor) -> torch.Tensor:
         """Place n_candidates input points inside the box [lower, upper]."""
         if self.n_dims == 1:
-            grid = torch.linspace(lower.item(), upper.item(), self.n_candidates)
-            return grid.to(torch.float64).unsqueeze(-1)
+            grid = torch.linspace(
+                lower.item(), upper.item(), self.n_candidates, dtype=torch.float64
+            )
+            return grid.unsqueeze(-1)
 
         unit = self._sampler.draw(self.n_candidates, dtype=torch.float64)
         return lower + (upper - lower) * unit

@@ -241,11 +241,28 @@ class TestZoomRefinement:
         acquisition.find_next_input_point(current_best=0.0)
 
         ((lo, hi),) = acquisition.search_bounds
-        expected_coarse_grid = torch.linspace(lo, hi, acquisition.n_candidates)
+        expected_coarse_grid = torch.linspace(
+            lo, hi, acquisition.n_candidates, dtype=torch.float64
+        )
 
         assert acquisition.candidates.shape == (acquisition.n_candidates, 1)
-        assert torch.allclose(
-            acquisition.candidates[:, 0], expected_coarse_grid.double()
+        assert torch.equal(acquisition.candidates[:, 0], expected_coarse_grid)
+
+    def test_candidate_grid_has_float64_precision(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that the 1D grid is not quietly generated in float32.
+
+        Before 0.4 the grid used torch's float32 default while the rest of
+        the package was float64, so candidates carried ~4e-8 rounding error.
+        """
+        acquisition.find_next_input_point(current_best=0.0)
+        ((lo, hi),) = acquisition.search_bounds
+        step = (hi - lo) / (acquisition.n_candidates - 1)
+
+        assert acquisition.candidates.dtype == torch.float64
+        assert acquisition.candidates[1, 0].item() == pytest.approx(
+            lo + step, abs=1e-14
         )
         assert acquisition.ei_scores.shape == (acquisition.n_candidates,)
 
