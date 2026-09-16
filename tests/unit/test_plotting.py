@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
+import h5py
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.widgets import Slider
 import pytest
 import torch
@@ -765,3 +767,82 @@ class TestPlotRunIterations:
 
         with pytest.raises(RuntimeError, match="store_snapshots"):
             load_iterations(tmp_path)
+
+
+def _write_v030_record(run_dir: Path) -> None:
+    """Write a results.h5 in the layout actgpr 0.3.0 produced.
+
+    Input points were flat then: next_point, candidates and train_x were
+    one-dimensional, and best_x and the fitted hyperparameters were scalar
+    attributes.
+    """
+    candidates = np.linspace(-1.0, 1.0, 20)
+    with h5py.File(run_dir / "results.h5", "w") as f:
+        f.attrs["ei_threshold"] = 0.01
+        history = f.create_group("history")
+        history["iteration"] = np.array([1, 2])
+        history["next_point"] = np.array([0.25, -0.5])
+        for field in ("new_y", "current_best", "max_ei"):
+            history[field] = np.array([0.5, 0.25])
+        history["prediction_error"] = np.array([0.1, -0.1])
+        history["improvement"] = np.array([0.0, 0.25])
+        history["lengthscale"] = np.array([1.5, 1.25])
+        history["outputscale"] = np.array([1.0, 1.0])
+        history["noise"] = np.array([1e-4, 1e-4])
+        for iteration in (1, 2):
+            group = f.create_group(f"iterations/iter_{iteration:03d}")
+            group["candidates"] = candidates
+            group["f_mean"] = np.zeros(20)
+            group["f_var"] = np.ones(20)
+            group["ei_scores"] = np.linspace(0.0, 0.05, 20)
+            group["train_x"] = np.array([-1.0, 1.0])
+            group["train_y"] = np.array([1.0, 0.5])
+        final = f.create_group("final")
+        final.attrs["best_x"] = 0.25
+        final.attrs["best_y"] = 0.25
+        final.attrs["stop_reason"] = "max_iterations"
+        final.attrs["n_iterations"] = 2
+        final.attrs["fitted_lengthscale"] = 1.25
+        final.attrs["fitted_outputscale"] = 1.0
+        final.attrs["fitted_noise"] = 1e-4
+        final["train_x"] = np.array([-1.0, 1.0, 0.25])
+        final["train_y"] = np.array([1.0, 0.5, 0.25])
+
+
+class TestReadingVersion030Records:
+    """Tests that run directories written by actgpr 0.3.0 still load.
+
+    0.4 stores input points with one column per dimension, but an existing
+    archive of 1D runs must stay readable without rewriting it.
+    """
+
+    def test_snapshots_come_back_in_the_current_shapes(self, tmp_path: Path) -> None:
+        """Test that flat 0.3.0 values are read as 1-tuples."""
+        _write_v030_record(tmp_path)
+
+        snapshots = _load_iteration_snapshots(tmp_path)
+
+        assert len(snapshots) == 2
+        assert snapshots[0]["next_point"] == (0.25,)
+        assert snapshots[1]["lengthscale"] == (1.25,)
+
+    def test_metrics_figure_loads(self, tmp_path: Path) -> None:
+        """Test that load_metrics reads the scalar best_x and hyperparameters."""
+        _write_v030_record(tmp_path)
+
+        fig, _ = load_metrics(tmp_path, show=False)
+        title = fig._suptitle.get_text()
+
+        assert "best_x: 0.2500" in title
+        assert "lengthscale: 1.25" in title
+
+    def test_iteration_slider_loads(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that load_iterations draws the flat 0.3.0 snapshots."""
+        monkeypatch.setattr(plt, "show", lambda: None)
+        _write_v030_record(tmp_path)
+
+        slider = load_iterations(tmp_path)
+
+        assert slider.valmax == 2
