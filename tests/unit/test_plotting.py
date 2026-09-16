@@ -60,6 +60,20 @@ class TestIterationSliderDimensionGuard:
         with pytest.raises(ValueError, match="3 input dimensions"):
             _draw_iteration_slider([snapshot], ei_threshold=0.01)
 
+    def test_single_frame_drawer_also_refuses_several_dimensions(self) -> None:
+        """Test that bypassing the slider does not bypass the guard.
+
+        The per-frame drawer is what the GIF and export scripts call
+        directly, so the 1D check has to live where the first coordinate is
+        taken, not only in the public entry points.
+        """
+        fig, axes = plt.subplots(2, 1)
+        snapshot = _make_snapshot(1, torch.linspace(0.0, 0.05, 20))
+        snapshot["candidates"] = torch.zeros(20, 3)
+
+        with pytest.raises(ValueError, match="points have 3"):
+            _plot_iteration_snapshot(snapshot, axes)
+
     def test_accepts_one_dimensional_points_as_rows(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

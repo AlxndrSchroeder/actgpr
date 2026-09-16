@@ -62,7 +62,17 @@ def _axis_values(points: torch.Tensor) -> torch.Tensor:
     """Return the single coordinate of one-dimensional input points."""
     # Points are (n, 1) since actgpr handles several input dimensions;
     # results.h5 files written by v0.3.0 still hold them as flat (n,).
-    return points[:, 0] if points.ndim == 2 else points
+    if points.ndim == 1:
+        return points
+    # Taking column 0 of a multi-dimensional point would draw a figure that
+    # looks valid and shows only x1, so refuse here, where the 1D
+    # assumption is made, rather than only in the public entry points.
+    if points.shape[1] != 1:
+        raise ValueError(
+            f"This figure draws one input dimension, but the points have "
+            f"{points.shape[1]}."
+        )
+    return points[:, 0]
 
 
 def _name_window(fig: Figure, title: str) -> None:
