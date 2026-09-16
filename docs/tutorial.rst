@@ -17,17 +17,20 @@ Setup
 Step 1: give it an Objective
 ------------------------------
 
-``actgpr`` minimises anything exposing ``evaluate(*x: float) -> tuple[float,
-...]``. It never checks whether that object is a particular type, only
-that the method exists (duck typing). Which of the two ways below to use
-depends on what you're wrapping.
+``actgpr`` minimises anything exposing an ``evaluate`` method that takes
+the coordinates of **one** input point, one argument per input, and
+returns that point's **one** output as a float. It is called once per
+input point, never with several points at once. ``actgpr`` never checks
+whether that object is a particular type, only that the method exists (duck
+typing). Which of the two ways below to use depends on what you're
+wrapping.
 
 Wrapping a plain function
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use ``ObjectiveFn``, a convenience that turns any
-``Callable[[float], float]`` into an Objective. This is the right choice
-when your blackbox is already a simple function:
+Use ``ObjectiveFn``, a convenience that turns a plain function, taking one
+float per input and returning one float, into an Objective. This is the
+right choice when your blackbox is already a simple function:
 
 .. code-block:: python
 
@@ -39,13 +42,25 @@ when your blackbox is already a simple function:
 
    objective = ObjectiveFn(my_blackbox)
 
-``objective.evaluate`` accepts one or more input points and returns a tuple
-of outputs:
+``objective.evaluate`` takes one input point and returns its output:
 
 .. code-block:: python
 
-   objective.evaluate(0.0)        # (1.0,)
-   objective.evaluate(0.0, 3.0)   # (1.0, 4.0)
+   objective.evaluate(0.0)   # 1.0
+   objective.evaluate(3.0)   # 4.0
+
+A function of several inputs simply takes several arguments, and
+``evaluate`` passes the coordinates through in the same order:
+
+.. code-block:: python
+
+   def my_blackbox_3d(x1: float, x2: float, x3: float) -> float:
+       return (x1 - 0.5) ** 2 + (x2 + 1.0) ** 2 + 0.2 * (x3 - 2.0) ** 2
+
+   ObjectiveFn(my_blackbox_3d).evaluate(0.5, -1.0, 2.0)   # 0.0, one 3D point
+
+Several arguments are therefore always the coordinates of *one* point.
+To evaluate several points, call ``evaluate`` once for each.
 
 Errors raised inside your function propagate unchanged, so you can handle
 them by their original type.
@@ -110,11 +125,12 @@ registration:
        def __init__(self, config):
            self.config = config  # e.g. simulation setup, fixed parameters
 
-       def evaluate(self, *x: float) -> tuple[float, ...]:
-           return tuple(self._run_simulation(v) for v in x)
+       def evaluate(self, pressure: float, temperature: float) -> float:
+           # Called once per input point, with one argument per input.
+           return self._run_simulation(pressure, temperature)
 
-       def _run_simulation(self, x: float) -> float:
-           ...  # launch your simulation/experiment at input x, return its output
+       def _run_simulation(self, pressure: float, temperature: float) -> float:
+           ...  # launch your simulation at this input point, return its output
 
    objective = MySimulation(config=...)
 
@@ -134,8 +150,10 @@ Step 2: configure the run
 Three decisions matter most:
 
 ``search_bounds``
-    The closed interval ``[lo, hi]`` in which the algorithm searches for the
-    minimum. The blackbox is never evaluated outside it.
+    One closed interval ``(lo, hi)`` per input, in which the algorithm
+    searches for the minimum. **The number of intervals is the number of
+    inputs** of the problem. A single ``(lo, hi)`` means one input. The
+    blackbox is never evaluated outside these intervals.
 
 ``max_iterations``
     The budget cap: the maximum number of active optimisation iterations
@@ -173,6 +191,46 @@ You also choose a **fit mode**:
        run_dir="results",            # write the MRR record
    )
 
+More than one input
+~~~~~~~~~~~~~~~~~~~~
+
+Nothing else changes for several inputs. Give one ``(lo, hi)`` pair per
+input, and write each starting point as a row with one coordinate per
+input:
+
+.. code-block:: python
+
+   run = OptimisationRun.with_training(
+       objective=ObjectiveFn(my_blackbox_3d),
+       surrogate=GPyTorchSurrogate(),
+       search_bounds=[(-2.0, 2.0), (-3.0, 1.0), (0.0, 5.0)],  # x1, x2, x3
+       initial_train_x=[[-1.0, 0.0, 1.0], [1.5, -2.5, 4.0]],  # two 3D points
+       max_iterations=20,
+       ei_threshold=1e-4,
+       run_dir="results",
+   )
+
+Everything has to agree with the number of intervals, and a mismatch fails
+before the Objective is ever called:
+
+- A flat ``initial_train_x=[0.0, 1.0]`` is accepted with one input (two 1D
+  points) but rejected with two inputs, since it could mean one 2D point or
+  two 1D points. Write ``[[0.0, 1.0]]``.
+- A starting point with the wrong number of coordinates raises a
+  ``ValueError`` saying how many were expected.
+- ``without_training`` takes ``lengthscale`` as one value for all inputs,
+  or as a list with one value per input, e.g. ``lengthscale=[0.5, 3.0]``.
+  Inputs usually vary on different scales, which is why the GP keeps one
+  lengthscale per input; ``with_training`` tunes each of them.
+
+With one input, the acquisition function scores an evenly spaced grid of
+``n_candidates`` points. With more inputs a grid is unaffordable (500 per
+input is 125 million points in 3D), so the candidates are drawn from a
+scrambled Sobol sequence instead, which covers the space evenly. The
+sequence is seeded with 25 and the seed is recorded in ``config.json``, so a
+multi-input run reproduces exactly. ``n_candidates`` is then spread across
+all inputs, so raise it for problems with many inputs.
+
 Step 3: execute and interpret
 ------------------------------
 
@@ -180,14 +238,23 @@ Step 3: execute and interpret
 
    result = run.run()
 
-   print(result["best_x"])       # ≈ 1.0  (input point with the lowest output)
+   print(result["best_x"])       # ≈ (1.0,)  (input point with the lowest output)
    print(result["best_y"])       # ≈ 0.0  (the lowest output found)
    print(result["n_iterations"])  # iterations actually executed
    print(result["stop_reason"])   # "ei_threshold" or "max_iterations"
 
+``best_x`` is a tuple with one coordinate per input, also when there is only
+one, so the same code works for any number of inputs:
+
+.. code-block:: python
+
+   (best_x,) = result["best_x"]          # one input
+   x1, x2, x3 = result["best_x"]         # three inputs
+
 ``result["train_x"]`` and ``result["train_y"]`` hold every input point the
 run evaluated and the corresponding Objective outputs: the initial points
-first, then one point per iteration.
+first, then one point per iteration. ``train_x`` has shape ``(n, d)``, one
+row per point.
 
 Step 4: browse the iterations
 ------------------------------
@@ -203,6 +270,11 @@ iteration:
 An interactive matplotlib window opens with the GP prediction (mean, 95 %
 confidence band, training data) on top, the EI landscape below, and a
 slider to scrub through iterations.
+
+This figure draws the surrogate as a curve over the input, so it is for
+problems with **one input**. For more inputs it raises a ``ValueError``
+that says so; use ``run.plot_metrics()`` (Step 5) instead, which works for
+any number of inputs.
 
 EI typically shrinks by orders of magnitude as a run converges, so on a
 linear axis later iterations would look like a flat line at zero with no
@@ -409,17 +481,22 @@ Shared parameters
    * - Parameter
      - Meaning
    * - ``objective``
-     - The wrapped blackbox function to minimise (an ``ObjectiveFn``).
+     - The blackbox to minimise: an ``ObjectiveFn`` or any object with
+       ``evaluate(x1, ..., xd) -> float``.
    * - ``surrogate``
      - The GP surrogate backend. Pass a fresh ``GPyTorchSurrogate()``, since
        it holds fitted state internally, so do not reuse one across runs.
    * - ``search_bounds``
-     - The closed interval ``(lo, hi)`` in which the algorithm searches for
-       the minimum. The blackbox is never evaluated outside it.
+     - One closed interval ``(lo, hi)`` per input, e.g.
+       ``[(-2.0, 2.0), (0.0, 5.0)]``. Their number is the number of inputs.
+       A single ``(lo, hi)`` means one input. The blackbox is never
+       evaluated outside them.
    * - ``initial_train_x``
-     - Points where the search starts. The first surrogate is fitted to
-       these before the loop runs. By convention, use the two
-       ``search_bounds`` endpoints.
+     - Points where the search starts, one row per point with one
+       coordinate per input, e.g. ``[[0.0, 1.0], [2.0, 3.0]]``. With one
+       input a flat list such as ``[-3.0, 5.0]`` is accepted. The first
+       surrogate is fitted to these before the loop runs. With one input, a
+       common choice is the two ``search_bounds`` endpoints.
    * - ``max_iterations``
      - Budget cap: the maximum number of active optimisation iterations
        (GPR fit cycles), not individual blackbox evaluations.
@@ -427,8 +504,9 @@ Shared parameters
      - Convergence threshold: the run stops early once the best achievable
        Expected Improvement drops below this value.
    * - ``n_candidates`` (default 500)
-     - Number of evenly spaced candidate points the acquisition function
-       scores every iteration.
+     - Number of candidate points the acquisition function scores in each
+       of its two stages every iteration: an evenly spaced grid with one
+       input, a seeded Sobol sample with more. Raise it for many inputs.
    * - ``noise`` (default 1e-4)
      - Starting observation noise variance for the GP likelihood. In
        ``with_training`` it is only a *starting point*, since Adam tunes it
@@ -469,7 +547,8 @@ Shared parameters
    * - Parameter
      - Meaning
    * - ``lengthscale`` (default 1.0)
-     - Fixed RBF kernel lengthscale, never tuned.
+     - Fixed RBF kernel lengthscale, never tuned. One value used for every
+       input, or a list with one value per input.
    * - ``outputscale`` (default 1.0)
      - Fixed kernel signal variance, never tuned.
 
@@ -560,8 +639,9 @@ frequently exactly zero, neither of which a log axis can display.
 What each raises
 ~~~~~~~~~~~~~~~~~
 
-The iteration figure needs the per-iteration snapshots; the metrics figure
-needs only the scalar series, which are always recorded. So the two fail in
+The iteration figure needs the per-iteration snapshots of a one-input run;
+the metrics figure needs only the per-iteration series, which are always
+recorded. So the two fail in
 different situations, each with a message naming the actual cause:
 
 .. list-table::
@@ -579,6 +659,10 @@ different situations, each with a message naming the actual cause:
    * - ``run()`` has not been called yet
      - ``RuntimeError`` from either method, telling you to call ``run()``
        first
+   * - The run has more than one input
+     - ``ValueError`` from ``load_iterations``/``plot_iterations``, since
+       the surrogate cannot be drawn as a curve.
+       ``load_metrics``/``plot_metrics`` work normally
 
 Where to go next
 ----------------
