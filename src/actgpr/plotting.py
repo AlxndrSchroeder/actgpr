@@ -530,10 +530,22 @@ def _draw_iteration_slider(
     ------
     RuntimeError
         If snapshots is empty.
+    ValueError
+        If the snapshots come from a run with more than one input dimension,
+        whose surrogate cannot be drawn as a curve over one axis.
     """
     if not snapshots:
         raise RuntimeError(
             "No snapshots available. Set store_snapshots=True before calling run()."
+        )
+
+    candidates = snapshots[0]["candidates"]
+    n_dims = candidates.shape[1] if candidates.ndim == 2 else 1
+    if n_dims > 1:
+        raise ValueError(
+            f"The iteration slider draws the surrogate as a curve over one "
+            f"input, but this run has {n_dims} input dimensions. Use "
+            f"plot_metrics() or load_metrics() to inspect it instead."
         )
 
     # One fixed EI range across every frame, so the shrinking EI maximum

@@ -43,6 +43,39 @@ def _make_snapshot(iteration: int, ei_scores: torch.Tensor) -> dict:
     }
 
 
+class TestIterationSliderDimensionGuard:
+    """Tests that the slider refuses problems it cannot draw."""
+
+    def test_rejects_snapshots_with_several_input_dimensions(self) -> None:
+        """Test that a 3D run fails clearly instead of plotting only x1.
+
+        Drawing just the first coordinate of a 3D problem would produce a
+        figure that looks valid and is wrong, so it must be an error.
+        """
+        snapshot = _make_snapshot(1, torch.linspace(0.0, 0.05, 20))
+        snapshot["candidates"] = torch.zeros(20, 3)
+
+        with pytest.raises(ValueError, match="3 input dimensions"):
+            _draw_iteration_slider([snapshot], ei_threshold=0.01)
+
+    def test_accepts_one_dimensional_points_as_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that (m, 1) candidates, the 0.4 shape, still draw."""
+        monkeypatch.setattr(plt, "show", lambda: None)
+        snapshots = []
+        for iteration in (1, 2):
+            snapshot = _make_snapshot(iteration, torch.linspace(0.0, 0.05, 20))
+            snapshot["candidates"] = snapshot["candidates"].unsqueeze(-1)
+            snapshot["train_x"] = snapshot["train_x"].unsqueeze(-1)
+            snapshot["next_point"] = (0.0,)
+            snapshots.append(snapshot)
+
+        slider = _draw_iteration_slider(snapshots, ei_threshold=0.01, show=False)
+
+        assert slider.valmax == 2
+
+
 class TestPlotAcquisition:
     """Tests for _plot_acquisition's y-axis scaling."""
 
