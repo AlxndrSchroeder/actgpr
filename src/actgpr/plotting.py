@@ -57,6 +57,13 @@ def _as_values(stored: object) -> tuple[float, ...]:
     return tuple(float(value) for value in np.atleast_1d(stored))
 
 
+def _axis_values(points: torch.Tensor) -> torch.Tensor:
+    """Return the single coordinate of one-dimensional input points."""
+    # Points are (n, 1) since actgpr handles several input dimensions;
+    # results.h5 files written by v0.3.0 still hold them as flat (n,).
+    return points[:, 0] if points.ndim == 2 else points
+
+
 def _name_window(fig: Figure, title: str) -> None:
     """Title a figure's window so several open at once stay tellable apart.
 
@@ -317,13 +324,19 @@ def _plot_iteration_snapshot(
     """
     gp_ax, ei_ax = axes
 
+    # This figure draws a one-dimensional problem, so every input point has
+    # a single coordinate, which becomes the x-axis.
+    candidates = _axis_values(snapshot["candidates"])
+    train_x = _axis_values(snapshot["train_x"])
+    next_point = float(np.atleast_1d(snapshot["next_point"])[0])
+
     _plot_gp(
-        candidates=snapshot["candidates"],
+        candidates=candidates,
         f_mean=snapshot["f_mean"],
         f_var=snapshot["f_var"],
-        train_x=snapshot["train_x"],
+        train_x=train_x,
         train_y=snapshot["train_y"],
-        next_point=snapshot["next_point"],
+        next_point=next_point,
         ax=gp_ax,
         show=False,
     )
@@ -332,7 +345,7 @@ def _plot_iteration_snapshot(
     # train_y, which is the same tensor current_best was taken from, so the
     # reported pair always belongs together.
     best_index = int(torch.argmin(snapshot["train_y"]))
-    best_x = snapshot["train_x"][best_index].item()
+    best_x = train_x[best_index].item()
 
     if "prediction_error" in snapshot:
         title = (
@@ -364,9 +377,9 @@ def _plot_iteration_snapshot(
     gp_ax.set_title(title)
 
     _plot_acquisition(
-        candidates=snapshot["candidates"],
+        candidates=candidates,
         ei_scores=snapshot["ei_scores"],
-        next_point=snapshot["next_point"],
+        next_point=next_point,
         ax=ei_ax,
         show=False,
         ylim=ei_ylim,

@@ -168,7 +168,10 @@ class TestMrrArtifacts:
             assert len(f["iterations"]) == n_recorded
 
             first = f["iterations/iter_001"]
-            for name in ("candidates", "f_mean", "f_var", "ei_scores"):
+            # Candidates are input points, one row each; the per-candidate
+            # predictions and scores are one value per candidate.
+            assert first["candidates"].shape == (200, 1)
+            for name in ("f_mean", "f_var", "ei_scores"):
                 assert first[name].shape == (200,)
 
 

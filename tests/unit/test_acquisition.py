@@ -21,6 +21,20 @@ def fitted_surrogate() -> GPyTorchSurrogate:
 
 
 @pytest.fixture()
+def fitted_surrogate_3d() -> GPyTorchSurrogate:
+    """Return a GPyTorchSurrogate fitted to a 3D sum of squares."""
+    generator = torch.Generator().manual_seed(SEED)
+    train_x = torch.rand(10, 3, generator=generator, dtype=torch.float64) * 4 - 2
+    train_y = (train_x**2).sum(dim=1)
+    surrogate = GPyTorchSurrogate()
+    surrogate.fit_no_training(train_x, train_y, lengthscale=1.0)
+    return surrogate
+
+
+BOUNDS_3D = [(-2.0, 2.0), (-1.0, 3.0), (0.0, 0.5)]
+
+
+@pytest.fixture()
 def acquisition(fitted_surrogate: GPyTorchSurrogate) -> Acquisition:
     """Return an Acquisition instance with a fitted surrogate."""
     return Acquisition(
@@ -41,7 +55,8 @@ class TestAcquisitionInit:
 
     def test_stores_search_bounds(self, acquisition: Acquisition) -> None:
         """Test that the Acquisition stores the search bounds."""
-        assert acquisition.search_bounds == (-3.0, 4.0)
+        assert acquisition.search_bounds == ((-3.0, 4.0),)
+        assert acquisition.n_dims == 1
 
     def test_stores_n_candidates(self, acquisition: Acquisition) -> None:
         """Test that the Acquisition stores the candidate count."""
@@ -122,20 +137,80 @@ class TestExpectedImprovement:
 class TestFindNextInputPoint:
     """Tests for Acquisition.find_next_input_point()."""
 
-    def test_returns_float(self, acquisition: Acquisition) -> None:
-        """Test that find_next_input_point returns a scalar float."""
-        current_best = 0.0
-        result = acquisition.find_next_input_point(current_best)
+    def test_returns_one_coordinate_in_one_dimension(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that a 1D search returns a point with a single float."""
+        result = acquisition.find_next_input_point(current_best=0.0)
 
-        assert isinstance(result, float)
+        assert isinstance(result, tuple)
+        assert len(result) == 1
+        assert isinstance(result[0], float)
 
     def test_result_within_search_bounds(self, acquisition: Acquisition) -> None:
         """Test that the returned point is within the search bounds."""
-        current_best = 0.0
-        result = acquisition.find_next_input_point(current_best)
+        (result,) = acquisition.find_next_input_point(current_best=0.0)
 
-        lo, hi = acquisition.search_bounds
+        ((lo, hi),) = acquisition.search_bounds
         assert lo <= result <= hi
+
+    def test_returns_one_coordinate_per_input_dimension(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that a 3D search returns a 3D point inside its bounds."""
+        acq = Acquisition(fitted_surrogate_3d, BOUNDS_3D, n_candidates=256)
+
+        result = acq.find_next_input_point(current_best=0.5)
+
+        assert len(result) == 3
+        for value, (lo, hi) in zip(result, BOUNDS_3D):
+            assert lo <= value <= hi
+
+    def test_candidates_cover_every_dimension_within_bounds(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that 3D candidates are (m, 3) and respect each interval."""
+        acq = Acquisition(fitted_surrogate_3d, BOUNDS_3D, n_candidates=256)
+        acq.find_next_input_point(current_best=0.5)
+
+        assert acq.candidates.shape == (256, 3)
+        for dim, (lo, hi) in enumerate(BOUNDS_3D):
+            assert torch.all(acq.candidates[:, dim] >= lo)
+            assert torch.all(acq.candidates[:, dim] <= hi)
+            # Sobol points fill the interval rather than bunching up.
+            assert acq.candidates[:, dim].max() - acq.candidates[:, dim].min() > (
+                0.9 * (hi - lo)
+            )
+
+    def test_multi_dimensional_search_is_reproducible(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that the seeded Sobol sampler makes 3D runs repeatable.
+
+        The global torch RNG is deliberately disturbed in between, since
+        the sampler must not depend on it.
+        """
+        torch.manual_seed(1)
+        result_a = Acquisition(fitted_surrogate_3d, BOUNDS_3D).find_next_input_point(
+            0.5
+        )
+        torch.manual_seed(2)
+        result_b = Acquisition(fitted_surrogate_3d, BOUNDS_3D).find_next_input_point(
+            0.5
+        )
+
+        assert result_a == result_b
+
+    def test_candidate_seed_selects_the_sample(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that a different seed places different 3D candidates."""
+        acq_a = Acquisition(fitted_surrogate_3d, BOUNDS_3D, seed=25)
+        acq_b = Acquisition(fitted_surrogate_3d, BOUNDS_3D, seed=26)
+        acq_a.find_next_input_point(0.5)
+        acq_b.find_next_input_point(0.5)
+
+        assert not torch.equal(acq_a.candidates, acq_b.candidates)
 
     def test_deterministic_with_same_seed(
         self, fitted_surrogate: GPyTorchSurrogate
@@ -165,11 +240,13 @@ class TestZoomRefinement:
         """
         acquisition.find_next_input_point(current_best=0.0)
 
-        lo, hi = acquisition.search_bounds
+        ((lo, hi),) = acquisition.search_bounds
         expected_coarse_grid = torch.linspace(lo, hi, acquisition.n_candidates)
 
-        assert acquisition.candidates.shape == (acquisition.n_candidates,)
-        assert torch.allclose(acquisition.candidates, expected_coarse_grid)
+        assert acquisition.candidates.shape == (acquisition.n_candidates, 1)
+        assert torch.allclose(
+            acquisition.candidates[:, 0], expected_coarse_grid.double()
+        )
         assert acquisition.ei_scores.shape == (acquisition.n_candidates,)
 
     def test_refined_point_can_fall_between_coarse_grid_points(
@@ -203,6 +280,22 @@ class TestZoomRefinement:
 
         preds = acquisition.surrogate.predict(torch.tensor([result]))
         refined_ei = acquisition.expected_improvement(
+            preds["f_mean"], preds["f_var"], current_best
+        ).item()
+
+        assert refined_ei >= coarse_max_ei - 1e-6
+
+    def test_refinement_does_not_regress_in_several_dimensions(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that the refinement box also sharpens a 3D search."""
+        acq = Acquisition(fitted_surrogate_3d, BOUNDS_3D, n_candidates=256)
+        current_best = 0.5
+        result = acq.find_next_input_point(current_best)
+        coarse_max_ei = acq.ei_scores.max().item()
+
+        preds = acq.surrogate.predict(torch.tensor([result]))
+        refined_ei = acq.expected_improvement(
             preds["f_mean"], preds["f_var"], current_best
         ).item()
 

@@ -615,7 +615,7 @@ class OptimisationRun:
 
             # 2. Compute current best and find the next input point
             current_best = self.train_y.min().item()
-            next_point = self._acq.find_next_input_point(current_best)
+            next_point = self._acq.find_next_input_point(current_best)[0]
             max_ei = self._acq.ei_scores.max().item()
 
             # 3. Check EI convergence before evaluating the new point
