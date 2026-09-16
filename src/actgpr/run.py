@@ -17,6 +17,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
 from actgpr import mrr
+from actgpr._points import format_values
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
 from actgpr.plotting import METRIC_FIELDS, _draw_iteration_slider, _draw_metrics
@@ -390,7 +391,7 @@ class OptimisationRun:
             "store_snapshots": self.store_snapshots,
         }
 
-    def _fitted_hyperparameters(self) -> dict[str, float] | None:
+    def _fitted_hyperparameters(self) -> dict[str, tuple[float, ...]] | None:
         """Return the surrogate's final hyperparameters, or None if unavailable.
 
         Read through an optional ``hyperparameters()`` method rather than
@@ -529,7 +530,9 @@ class OptimisationRun:
             if fitted is not None:
                 logger.info(
                     "Final surrogate hyperparameters: "
-                    + ", ".join(f"{k}={v:.6g}" for k, v in fitted.items())
+                    + ", ".join(
+                        f"{k}={format_values(v, '.6g')}" for k, v in fitted.items()
+                    )
                 )
 
             # ── MRR: finalize (only if run_dir provided) ──

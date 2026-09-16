@@ -32,6 +32,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
+from actgpr._points import format_values
+
 # Half-width of the shaded confidence band in standard deviations;
 # ±2σ covers ≈95% of a Gaussian posterior.
 CI_STD_FACTOR = 2.0
@@ -46,6 +48,13 @@ EI_LOG_FLOOR_DEFAULT = 1e-8
 # Surrogate hyperparameters reported in plot titles, when available. Named
 # once so the iteration and metric figures stay in step.
 HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
+
+
+def _as_values(stored: object) -> tuple[float, ...]:
+    """Read a stored hyperparameter as a tuple, whether scalar or array."""
+    # np.atleast_1d also accepts the scalar attributes v0.3.0 wrote, so
+    # results.h5 files from before per-dimension lengthscales still load.
+    return tuple(float(value) for value in np.atleast_1d(stored))
 
 
 def _name_window(fig: Figure, title: str) -> None:
@@ -348,7 +357,8 @@ def _plot_iteration_snapshot(
     # not report them, so they are optional here too.
     if all(key in snapshot for key in HYPERPARAMETER_KEYS):
         title += "\n" + " | ".join(
-            f"{key}: {snapshot[key]:.4g}" for key in HYPERPARAMETER_KEYS
+            f"{key}: {format_values(snapshot[key], '.4g')}"
+            for key in HYPERPARAMETER_KEYS
         )
 
     gp_ax.set_title(title)
@@ -435,7 +445,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
             # Recorded only when the surrogate reports them.
             for field in HYPERPARAMETER_KEYS:
                 if field in history:
-                    snapshot[field] = float(history[field][row])
+                    snapshot[field] = _as_values(history[field][row])
             for field in ("candidates", "f_mean", "f_var", "ei_scores"):
                 snapshot[field] = torch.from_numpy(group[field][:])
             snapshot["train_x"] = torch.from_numpy(group["train_x"][:])
@@ -456,7 +466,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
                 converged[field] = torch.from_numpy(final[f"converged_{field}"][:])
             for field in HYPERPARAMETER_KEYS:
                 if f"fitted_{field}" in final.attrs:
-                    converged[field] = float(final.attrs[f"fitted_{field}"])
+                    converged[field] = _as_values(final.attrs[f"fitted_{field}"])
             snapshots.append(converged)
 
     return snapshots
@@ -620,7 +630,7 @@ def _draw_metrics(
     best_x: float,
     best_y: float,
     stop_reason: str,
-    fitted_hyperparameters: dict[str, float] | None = None,
+    fitted_hyperparameters: dict[str, tuple[float, ...]] | None = None,
     show: bool = True,
     log_scale: bool = True,
 ) -> tuple[Figure, np.ndarray]:
@@ -685,7 +695,8 @@ def _draw_metrics(
     )
     if fitted_hyperparameters:
         title += "\nfinal " + " | ".join(
-            f"{key}: {value:.4g}" for key, value in fitted_hyperparameters.items()
+            f"{key}: {format_values(value, '.4g')}"
+            for key, value in fitted_hyperparameters.items()
         )
     fig.suptitle(title)
     fig.tight_layout()
@@ -747,7 +758,7 @@ def load_metrics(
         # The hyperparameters the run finished with, written by
         # mrr.save_hdf5 when the surrogate reports them.
         fitted = {
-            key: float(f["final"].attrs[f"fitted_{key}"])
+            key: _as_values(f["final"].attrs[f"fitted_{key}"])
             for key in HYPERPARAMETER_KEYS
             if f"fitted_{key}" in f["final"].attrs
         }

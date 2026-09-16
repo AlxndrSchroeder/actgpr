@@ -178,7 +178,7 @@ def save_hdf5(
     stop_reason: str,
     n_iterations: int,
     convergence_snapshot: dict[str, object] | None = None,
-    fitted_hyperparameters: dict[str, float] | None = None,
+    fitted_hyperparameters: dict[str, tuple[float, ...]] | None = None,
 ) -> None:
     """Write a self-describing HDF5 file with the run history and results.
 
@@ -260,12 +260,18 @@ def save_hdf5(
         # only when the surrogate exposes them (see OptimisationRun.
         # _fitted_hyperparameters). Written as their own series so a
         # with_training run's retuning is visible per iteration rather than
-        # collapsed to the final value.
+        # collapsed to the final value. Each is shape (n_iterations, k), with
+        # k the number of values: one per input dimension for lengthscale,
+        # one for outputscale and noise.
         for field in ("lengthscale", "outputscale", "noise"):
             if results and all(field in res for res in results):
-                history.create_dataset(
+                dataset = history.create_dataset(
                     field,
                     data=np.array([res[field] for res in results], dtype=np.float64),
+                )
+                dataset.attrs["description"] = (
+                    "One row per iteration; lengthscale has one column per "
+                    "input dimension."
                 )
 
         # Snapshot arrays, only when captured, one group per iteration.
@@ -295,7 +301,9 @@ def save_hdf5(
         # can only hold the starting values.
         if fitted_hyperparameters is not None:
             for name, value in fitted_hyperparameters.items():
-                final_group.attrs[f"fitted_{name}"] = float(value)
+                final_group.attrs[f"fitted_{name}"] = np.asarray(
+                    value, dtype=np.float64
+                )
 
         if convergence_snapshot is not None:
             final_group.attrs["converged_max_ei"] = float(

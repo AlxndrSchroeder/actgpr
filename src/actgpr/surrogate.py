@@ -1,5 +1,7 @@
 """Surrogate model module for active GPR optimisation."""
 
+from collections.abc import Sequence
+
 import torch
 import gpytorch
 
@@ -14,7 +16,9 @@ class ExactGPModel(gpytorch.models.ExactGP):
     """An exact Gaussian Process model with Constant mean and scaled RBF kernel.
 
     This class defines the structural prior components (mean and covariance) of
-    the GP model.
+    the GP model. The RBF kernel has one lengthscale per input dimension
+    (automatic relevance determination), since inputs of a multi-dimensional
+    problem generally vary on different scales.
     """
 
     def __init__(
@@ -35,8 +39,11 @@ class ExactGPModel(gpytorch.models.ExactGP):
             The GPyTorch likelihood mapping latent outputs to observed targets.
         """
         super().__init__(train_x, train_y, likelihood)
+        n_dims = train_x.shape[-1] if train_x.ndim > 1 else 1
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=n_dims)
+        )
 
     def forward(self, x: torch.Tensor) -> gpytorch.distributions.MultivariateNormal:
         """Compute the prior distribution at input points x.
@@ -165,7 +172,7 @@ class GPyTorchSurrogate:
         self,
         train_x: torch.Tensor,
         train_y: torch.Tensor,
-        lengthscale: float = 1.0,
+        lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
     ) -> None:
@@ -181,17 +188,33 @@ class GPyTorchSurrogate:
             point.
         train_y : torch.Tensor of shape (n,)
             The corresponding Objective outputs.
-        lengthscale : float, optional
-            The RBF kernel lengthscale, by default 1.0.
+        lengthscale : float or sequence of float, optional
+            The RBF kernel lengthscale, by default 1.0. A single value is used
+            for every input dimension; a sequence gives one value per input
+            dimension, in order.
         outputscale : float, optional
             The kernel outputscale (signal variance), by default 1.0.
         noise : float, optional
             The observation noise variance, by default 1e-4.
+
+        Raises
+        ------
+        ValueError
+            If lengthscale is a sequence whose length is not the number of
+            input dimensions.
         """
         self._setup_model(train_x, train_y)
 
+        n_dims = self.train_x.shape[1]
+        lengthscales = torch.as_tensor(lengthscale, dtype=torch.float64)
+        if lengthscales.ndim > 0 and lengthscales.numel() != n_dims:
+            raise ValueError(
+                f"lengthscale needs one value per input dimension ({n_dims}), "
+                f"got {lengthscales.numel()}."
+            )
+
         # Set hyperparameters to user-specified values
-        self.model.covar_module.base_kernel.lengthscale = lengthscale
+        self.model.covar_module.base_kernel.lengthscale = lengthscales
         self.model.covar_module.outputscale = outputscale
         self.likelihood.noise = noise
 
@@ -201,7 +224,7 @@ class GPyTorchSurrogate:
         for param in self.likelihood.parameters():
             param.requires_grad = False
 
-    def hyperparameters(self) -> dict[str, float]:
+    def hyperparameters(self) -> dict[str, tuple[float, ...]]:
         """Return the GP's current kernel and likelihood hyperparameters.
 
         After ``fit_no_training`` these are the values that were passed in.
@@ -211,8 +234,10 @@ class GPyTorchSurrogate:
 
         Returns
         -------
-        dict[str, float]
-            ``lengthscale``, ``outputscale``, and ``noise``.
+        dict[str, tuple of float]
+            ``lengthscale`` with one value per input dimension, and
+            ``outputscale`` and ``noise`` with one value each. Every entry is
+            a tuple so that callers can record and render all three alike.
 
         Raises
         ------
@@ -224,12 +249,11 @@ class GPyTorchSurrogate:
                 "The model must be fitted before reading hyperparameters."
             )
 
+        kernel = self.model.covar_module
         return {
-            "lengthscale": float(
-                self.model.covar_module.base_kernel.lengthscale.item()
-            ),
-            "outputscale": float(self.model.covar_module.outputscale.item()),
-            "noise": float(self.likelihood.noise.item()),
+            "lengthscale": tuple(kernel.base_kernel.lengthscale.flatten().tolist()),
+            "outputscale": (float(kernel.outputscale.item()),),
+            "noise": (float(self.likelihood.noise.item()),),
         }
 
     def predict(

@@ -284,9 +284,9 @@ class TestGPyTorchSurrogateHyperparameters:
 
         hyperparameters = model.hyperparameters()
 
-        assert hyperparameters["lengthscale"] == pytest.approx(2.5, rel=1e-4)
-        assert hyperparameters["outputscale"] == pytest.approx(3.5, rel=1e-4)
-        assert hyperparameters["noise"] == pytest.approx(1e-3, rel=1e-4)
+        assert hyperparameters["lengthscale"] == pytest.approx((2.5,), rel=1e-4)
+        assert hyperparameters["outputscale"] == pytest.approx((3.5,), rel=1e-4)
+        assert hyperparameters["noise"] == pytest.approx((1e-3,), rel=1e-4)
 
     def test_reports_the_values_adam_tuned_to(
         self,
@@ -306,9 +306,50 @@ class TestGPyTorchSurrogateHyperparameters:
         hyperparameters = model.hyperparameters()
 
         assert set(hyperparameters) == {"lengthscale", "outputscale", "noise"}
-        assert all(isinstance(v, float) for v in hyperparameters.values())
+        assert all(isinstance(v, tuple) for v in hyperparameters.values())
+        assert all(isinstance(x, float) for v in hyperparameters.values() for x in v)
         # Adam moves the kernel away from GPyTorch's default starting point.
-        assert hyperparameters["lengthscale"] != pytest.approx(1.0, rel=1e-3)
+        assert hyperparameters["lengthscale"] != pytest.approx((1.0,), rel=1e-3)
+
+    def test_lengthscale_has_one_value_per_input_dimension(self) -> None:
+        """Test that a 3D fit reports three lengthscales, others one value."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(6, 3, generator=generator),
+            torch.rand(6, generator=generator),
+            lengthscale=[0.5, 1.0, 2.0],
+        )
+
+        hyperparameters = model.hyperparameters()
+
+        assert hyperparameters["lengthscale"] == pytest.approx((0.5, 1.0, 2.0))
+        assert len(hyperparameters["outputscale"]) == 1
+        assert len(hyperparameters["noise"]) == 1
+
+    def test_single_lengthscale_is_used_for_every_dimension(self) -> None:
+        """Test that a scalar lengthscale is shared across all dimensions."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(6, 3, generator=generator),
+            torch.rand(6, generator=generator),
+            lengthscale=1.5,
+        )
+
+        assert model.hyperparameters()["lengthscale"] == pytest.approx((1.5,) * 3)
+
+    def test_lengthscale_count_must_match_the_dimensions(self) -> None:
+        """Test that two lengthscales for a 3D fit is rejected."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+
+        with pytest.raises(ValueError, match="one value per input dimension"):
+            model.fit_no_training(
+                torch.rand(6, 3, generator=generator),
+                torch.rand(6, generator=generator),
+                lengthscale=[1.0, 2.0],
+            )
 
 
 class TestGPyTorchSurrogatePredict:

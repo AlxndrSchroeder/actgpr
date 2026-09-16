@@ -308,6 +308,48 @@ class TestSaveHdf5:
             for field in ("candidates", "f_mean", "f_var", "ei_scores"):
                 assert f"converged_{field}" in final
 
+    def test_lengthscale_history_has_one_column_per_input_dimension(
+        self, tmp_path: Path
+    ):
+        """Test that per-dimension lengthscales are stored as (n_iter, d)."""
+        results = [
+            {
+                "iteration": i,
+                "next_point": 0.5,
+                "new_y": 0.2,
+                "current_best": 0.2,
+                "max_ei": 0.1,
+                "prediction_error": 0.05,
+                "improvement": 0.0,
+                "lengthscale": (0.5 * i, 1.0 * i, 2.0 * i),
+                "outputscale": (1.0,),
+                "noise": (1e-4,),
+            }
+            for i in (1, 2)
+        ]
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.zeros(3, 3),
+            final_train_y=torch.zeros(3),
+            best_x=0.5,
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=2,
+            fitted_hyperparameters={
+                "lengthscale": (1.0, 2.0, 4.0),
+                "outputscale": (1.0,),
+                "noise": (1e-4,),
+            },
+        )
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            assert f["history/lengthscale"].shape == (2, 3)
+            assert f["history/outputscale"].shape == (2, 1)
+            assert list(f["final"].attrs["fitted_lengthscale"]) == [1.0, 2.0, 4.0]
+
     def test_no_convergence_fields_without_convergence_snapshot(
         self, tmp_path: Path, dummy_data
     ):

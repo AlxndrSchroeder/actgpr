@@ -263,9 +263,9 @@ class TestPlotIterationSnapshot:
             "max_ei": 0.5,
             "prediction_error": 0.1,
             "improvement": 0.2,
-            "lengthscale": 0.75,
-            "outputscale": 1.5,
-            "noise": 1e-4,
+            "lengthscale": (0.75,),
+            "outputscale": (1.5,),
+            "noise": (1e-4,),
         }
 
         _plot_iteration_snapshot(snapshot, (gp_ax, ei_ax))
