@@ -3,6 +3,8 @@
 import torch
 import gpytorch
 
+from actgpr._points import as_points
+
 # Jitter added to the covariance diagonal during Cholesky decomposition to
 # keep the matrix numerically positive definite (float64 throughout).
 CHOLESKY_JITTER = 1e-4
@@ -25,8 +27,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The training input points.
+        train_x : torch.Tensor of shape (n, d)
+            The training input points, one row per point.
         train_y : torch.Tensor of shape (n,)
             The training outputs.
         likelihood : gpytorch.likelihoods.GaussianLikelihood
@@ -41,7 +43,7 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
         Parameters
         ----------
-        x : torch.Tensor of shape (m,)
+        x : torch.Tensor of shape (m, d)
             The input points to evaluate the prior mean and covariance at.
 
         Returns
@@ -55,7 +57,7 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the ExactGPModel."""
-        n = self.train_inputs[0].numel() if self.train_inputs else 0
+        n = self.train_inputs[0].shape[0] if self.train_inputs else 0
         return f"ExactGPModel(n_points={n})"
 
 
@@ -75,7 +77,7 @@ class GPyTorchSurrogate:
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the GPyTorchSurrogate."""
-        n = self.train_x.numel() if self.train_x is not None else 0
+        n = self.train_x.shape[0] if self.train_x is not None else 0
         fitted = self.model is not None
         return f"GPyTorchSurrogate(n_points={n}, fitted={fitted})"
 
@@ -88,23 +90,29 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point. A flat tensor is read as ``n`` points in one dimension.
         train_y : torch.Tensor of shape (n,)
-            The corresponding Objective outputs.
+            The corresponding Objective outputs, one per input point.
 
         Raises
         ------
         ValueError
-            If train_x and train_y shapes are not compatible.
+            If train_y is not one-dimensional or does not hold one output
+            per input point.
         """
-        if train_x.shape != train_y.shape:
+        points = as_points(train_x)
+        outputs = torch.as_tensor(train_y, dtype=torch.float64)
+        if outputs.ndim != 1 or outputs.shape[0] != points.shape[0]:
             raise ValueError(
-                f"Shape mismatch: train_x shape {train_x.shape} must match train_y shape {train_y.shape}"
+                f"Shape mismatch: train_x holds {points.shape[0]} input points "
+                f"but train_y has shape {tuple(outputs.shape)}; expected "
+                f"({points.shape[0]},)."
             )
 
-        self.train_x = train_x.double()
-        self.train_y = train_y.double()
+        self.train_x = points
+        self.train_y = outputs
 
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood().double()
         self.model = ExactGPModel(self.train_x, self.train_y, self.likelihood).double()
@@ -124,10 +132,11 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point.
         train_y : torch.Tensor of shape (n,)
-            The corresponding evaluations of the objective.
+            The corresponding Objective outputs.
         training_iter : int, optional
             Number of iterations for hyperparameter optimisation, by default 50.
         lr : float, optional
@@ -167,10 +176,11 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point.
         train_y : torch.Tensor of shape (n,)
-            The corresponding evaluations of the objective.
+            The corresponding Objective outputs.
         lengthscale : float, optional
             The RBF kernel lengthscale, by default 1.0.
         outputscale : float, optional
@@ -231,8 +241,9 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        test_x : torch.Tensor of shape (m,)
-            The test input points to predict at.
+        test_x : torch.Tensor of shape (m, d), or (m,) when d is 1
+            The input points to predict at, with as many coordinates per
+            point as the training data.
         n_samples : int, optional
             Number of samples to draw from the latent function's predictive
             posterior, by default 0. Sampling is skipped entirely when 0,
@@ -262,11 +273,13 @@ class GPyTorchSurrogate:
         ------
         RuntimeError
             If fit_and_train() or fit_no_training() has not been called prior to predicting.
+        ValueError
+            If test_x does not have one coordinate per input dimension.
         """
         if self.model is None or self.likelihood is None:
             raise RuntimeError("The model must be fitted before predicting.")
 
-        test_x_double = test_x.double()
+        test_x_double = as_points(test_x, n_dims=self.train_x.shape[1])
         self.model.eval()
         self.likelihood.eval()
 

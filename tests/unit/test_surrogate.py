@@ -105,13 +105,51 @@ class TestGPyTorchSurrogateFit:
         self,
         training_data: tuple[torch.Tensor, torch.Tensor],
     ) -> None:
-        """Test that fit() stores a reference to the original training data."""
+        """Test that fit() stores the training data, one row per input point."""
         train_x, train_y = training_data
         model = GPyTorchSurrogate()
         model.fit_and_train(train_x, train_y, training_iter=5)
 
-        assert torch.equal(model.train_x, train_x)
-        assert torch.equal(model.train_y, train_y)
+        assert model.train_x.shape == (train_x.shape[0], 1)
+        assert torch.equal(model.train_x[:, 0], train_x.double())
+        assert torch.equal(model.train_y, train_y.double())
+
+    def test_fit_accepts_several_input_dimensions(self) -> None:
+        """Test that input points with three coordinates can be fitted."""
+        generator = torch.Generator().manual_seed(SEED)
+        train_x = torch.rand(12, 3, generator=generator, dtype=torch.float64)
+        train_y = (train_x**2).sum(dim=1)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(train_x, train_y)
+
+        preds = model.predict(
+            torch.rand(7, 3, generator=generator, dtype=torch.float64)
+        )
+
+        assert model.train_x.shape == (12, 3)
+        assert preds["f_mean"].shape == (7,)
+        assert preds["f_var"].shape == (7,)
+
+    def test_predict_rejects_points_with_the_wrong_dimension(self) -> None:
+        """Test that predicting in 2D on a 3D fit fails clearly."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(5, 3, generator=generator), torch.rand(5, generator=generator)
+        )
+
+        with pytest.raises(ValueError, match="Expected 3 coordinates"):
+            model.predict(torch.rand(4, 2, generator=generator))
+
+    def test_repr_counts_points_not_coordinates(self) -> None:
+        """Test that n_points is the number of rows, not n * d."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(5, 3, generator=generator), torch.rand(5, generator=generator)
+        )
+
+        assert "n_points=5" in repr(model)
 
     def test_fit_raises_on_shape_mismatch(self) -> None:
         """Test that fit() raises ValueError when train_x and train_y have different shapes."""
