@@ -68,6 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `history/next_point` and `history/lengthscale` have one column per
   input, and `final/best_x` and `meta.json`'s `best_x` hold one value per
   input
+- The zoom refinement now runs twice for a run with more than one input
+  and once for a single input (`Acquisition(refinement_stages=...)` to
+  override). Candidates thin out as inputs are added, so with 500
+  candidates and three inputs one refinement leaves a box covering 57.7% of
+  each axis and barely refines anything, against 0.8% with a single input.
+  On the three-input test function this lowered the median `best_y` from
+  0.0102 to 0.0030 across five candidate seeds, and its worst case (0.0093)
+  beat the previous median, for one extra prediction per iteration. A
+  single input keeps one stage deliberately: a second would shrink the box
+  to the spacing between the points of a converged run and risk evaluating
+  the same point twice, the stagnation the refinement exists to prevent.
+  Three stages were measured as worse than two
 - `OptimisationRun` rejects an `initial_train_x` point that lies outside
   its search bounds, naming the point and the input. The Objective is never
   evaluated outside the bounds, so a starting point outside them was the
@@ -90,14 +102,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The README and tutorial now state how precise a multi-input run is, and
-  why. The zoom-refinement box is 0.8% of each axis with one input but
-  57.7% with three, because candidates thin out as inputs are added, so a
-  three-input run lands around `0.1` from the optimum in input space where
-  a one-input run reaches `5.5e-4`. The docs record what helped on the test
-  function (more starting points with a smaller `ei_threshold`, and a much
-  larger `n_candidates`) and what did not (a larger `max_iterations`, since
-  the run converges via `ei_threshold` regardless)
+- The README and tutorial now state how precise a multi-input run is, why,
+  and what improves it: on the three-input test function the default
+  settings reach `best_y` of about 0.003, roughly 0.08 from the true
+  minimum, against 5.5e-4 for the one-input demo. Raising `n_candidates` to
+  8000 reaches 0.0014 at about nine times the runtime, while 2000 is no
+  better than 500, since what helps is more candidates per axis. More
+  starting points with a smaller `ei_threshold` also helps; a larger
+  `max_iterations` does not, since the run converges via `ei_threshold`
+  either way. Replacing the candidate stage with continuous optimisation of
+  the acquisition function was tried and measured: it found a higher EI but
+  gave no better result at five times the runtime, so at this problem size
+  the bottleneck is where points are placed, not how precisely the
+  acquisition maximum is located
 - The iteration slider (`plot_iterations`, `load_iterations`) is for
   problems with one input, since it draws the surrogate as a curve. For
   more inputs it raises a `ValueError` saying so, and the check sits where

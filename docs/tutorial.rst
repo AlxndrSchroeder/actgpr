@@ -244,47 +244,62 @@ How precise is it with several inputs?
 Less precise than with one input, and it is worth knowing why before
 trusting a result.
 
-Each iteration picks its next point in two passes: a coarse pass over the
-whole search space, then a zoom pass that re-searches a box around the
-coarse winner. The box width follows the candidate spacing, and candidates
-thin out quickly as inputs are added. With 500 candidates:
+Each iteration picks its next point in stages: a coarse pass over the whole
+search space, then a refinement pass that re-searches a box around the best
+point so far. The box follows the candidate spacing, and candidates thin out
+quickly as inputs are added. With 500 candidates:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 30 50
+   :widths: 14 24 31 31
 
    * - Inputs
      - Candidates per axis
-     - Zoom box, as a share of each axis
+     - Box after 1st refinement
+     - After 2nd
    * - 1
      - 500
-     - 0.8 %
+     - 0.8 % of each axis
+     - not used
    * - 2
      - 22
      - 18.7 %
+     - 3.5 %
    * - 3
      - 7.9
      - 57.7 %
+     - 33.2 %
 
-With one input the zoom pass is a real refinement, which is why the demo
-run above lands within ``5.5e-4`` of the true minimum. With three inputs
-the box still covers more than half of each axis, so it barely sharpens the
-coarse pass.
+This is why a run with more than one input refines twice while a single
+input refines once. In one dimension the first box is already 0.8 % of the
+axis, and a second pass would shrink it to the spacing between the points of
+a converged run, which risks evaluating the same point twice. Pass
+``refinement_stages`` to ``Acquisition`` to override the choice.
 
 Measured on the three-input function
-``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` with the defaults of 20
-iterations and 500 candidates, ``best_y`` lands around ``0.01`` and
-``best_x`` within about ``0.1`` of the true minimum. Read such a result as
-"the right region" rather than "the exact optimum".
+``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` with 20 iterations, the default
+500 candidates reach ``best_y`` of about ``0.003``, roughly ``0.08`` from
+the true minimum, in under two seconds. Raising ``n_candidates`` to 8000
+reaches ``0.0014`` and ``0.04``, taking about sixteen seconds. The
+one-input demo earlier in this tutorial lands within ``5.5e-4``. So with
+several inputs, read a result as "the right region" rather than "the exact
+optimum".
 
-On that function, more starting points together with a smaller
-``ei_threshold`` helped most (six points and ``1e-8`` brought ``best_y`` to
-``0.0025``), and raising ``n_candidates`` from 500 to 8000 helped somewhat.
-Raising ``max_iterations`` alone did not help at all: the run converged via
-``ei_threshold`` after 29 evaluations either way. These are measurements on
-one function rather than a benchmark. The structural fix, optimising the
-acquisition function continuously instead of over candidates, is planned
-rather than done.
+Raising ``n_candidates`` to a few thousand is the most effective single
+change, because what helps is more candidates *per axis*: 2000 was no better
+than 500. More starting points together with a smaller ``ei_threshold`` also
+helps. Raising ``max_iterations`` alone does not, since the run converges via
+``ei_threshold`` at around 29 evaluations either way.
+
+No point is ever evaluated twice: across these runs no new point landed
+within 0.1 % of an earlier one, so the search does not stall by re-sampling
+where it has already looked.
+
+These are measurements on one function rather than a benchmark. Replacing
+the candidate stage with continuous optimisation of the acquisition function
+was tried and measured: it found a higher EI but produced no better result
+at five times the runtime, so at this problem size the bottleneck is where
+points get placed, not how precisely the acquisition maximum is located.
 
 Step 3: execute and interpret
 ------------------------------

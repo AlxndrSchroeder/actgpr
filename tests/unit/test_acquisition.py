@@ -318,6 +318,61 @@ class TestZoomRefinement:
 
         assert refined_ei >= coarse_max_ei - 1e-6
 
+    def test_one_refinement_stage_for_a_single_input(
+        self, acquisition: Acquisition
+    ) -> None:
+        """Test that a 1D search refines once.
+
+        Its box is already 0.8% of the axis; a second stage would shrink it
+        to the spacing between the points of a converged run and risk
+        evaluating the same point twice.
+        """
+        assert acquisition.refinement_stages == 1
+
+    def test_two_refinement_stages_for_several_inputs(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that a 3D search refines twice.
+
+        Candidates thin out with dimension: one stage leaves a box covering
+        more than half of each axis in 3D, which barely refines anything.
+        """
+        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).refinement_stages == 2
+
+    def test_refinement_stages_can_be_set_explicitly(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that the automatic choice can be overridden."""
+        acq = Acquisition(fitted_surrogate_3d, BOUNDS_3D, refinement_stages=3)
+
+        assert acq.refinement_stages == 3
+
+    def test_more_stages_narrow_the_search(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that each extra stage lands closer to the EI maximum.
+
+        A later stage searches inside the previous stage's box, so its point
+        can only be at least as good, never worse.
+        """
+        current_best = 0.5
+        points, scores = [], []
+        for stages in (1, 2):
+            acq = Acquisition(
+                fitted_surrogate_3d, BOUNDS_3D, 256, refinement_stages=stages
+            )
+            point = acq.find_next_input_point(current_best)
+            preds = fitted_surrogate_3d.predict(torch.tensor([point]))
+            scores.append(
+                acq.expected_improvement(
+                    preds["f_mean"], preds["f_var"], current_best
+                ).item()
+            )
+            points.append(point)
+
+        assert points[0] != points[1]
+        assert scores[1] >= scores[0] - 1e-9
+
     def test_next_point_mean_matches_prediction_at_next_point(
         self, acquisition: Acquisition
     ) -> None:

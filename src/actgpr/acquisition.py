@@ -32,8 +32,9 @@ class Acquisition:
     Stores a reference to the surrogate, search bounds, and candidate count.
     Scores candidate input points and selects the next input point to evaluate.
 
-    Candidates are placed in two stages: a coarse set covering the whole
-    search bounds, then a fine set in a small box around the coarse best.
+    Candidates are placed in stages: a coarse set covering the whole search
+    bounds, then one or two refinement sets in a shrinking box around the
+    best point found so far (see ``refinement_stages``).
     With one input dimension both sets are evenly spaced grids. With more,
     a grid is unaffordable (500 per axis is 125 million points in 3D), so
     both sets are drawn from a scrambled Sobol sequence, which covers the
@@ -53,6 +54,7 @@ class Acquisition:
         search_bounds: Sequence[float] | Sequence[Sequence[float]],
         n_candidates: int = 500,
         seed: int = DEFAULT_CANDIDATE_SEED,
+        refinement_stages: int | None = None,
     ) -> None:
         """Initialize the Acquisition function.
 
@@ -74,12 +76,27 @@ class Acquisition:
             Seed for the Sobol candidate sampler used with more than one
             input dimension, by default 25. Unused in one dimension, where
             candidates are an evenly spaced grid.
+        refinement_stages : int or None, optional
+            How many times the zoom refinement shrinks its box around the
+            best candidate. If None (the default), 1 for a single input
+            dimension and 2 for more.
+
+            Candidates thin out as dimensions are added, so one stage leaves
+            a box covering more than half of each axis in three dimensions,
+            which barely refines anything, while in one dimension it is
+            already 0.8% of the axis. A second stage in one dimension would
+            shrink the box to the spacing between the points of a converged
+            run, risking evaluating the same point twice, which is the
+            stagnation the refinement exists to prevent.
         """
         self.surrogate = surrogate
         self.search_bounds = parse_search_bounds(search_bounds)
         self.n_dims = len(self.search_bounds)
         self.n_candidates = n_candidates
         self.seed = seed
+        self.refinement_stages = (
+            refinement_stages if refinement_stages is not None else min(self.n_dims, 2)
+        )
 
         self._lower = torch.tensor(
             [lo for lo, _ in self.search_bounds], dtype=torch.float64
@@ -193,9 +210,9 @@ class Acquisition:
         and variance using the surrogate, scores them with Expected
         Improvement, and locates the candidate with the highest score. The
         coarse candidates' spacing caps how precisely the true EI maximum
-        can be located, so a second, much finer set is then scored inside a
-        small box around the coarse best point, and the refined maximum is
-        returned instead.
+        can be located, so a finer set is then scored inside a box around
+        the best point, once or twice depending on ``refinement_stages``,
+        and the refined maximum is returned instead.
 
         Parameters
         ----------
@@ -226,35 +243,36 @@ class Acquisition:
         self.ei_scores = self.expected_improvement(
             self.f_mean, self.f_var, current_best
         )
-        coarse_best = self.candidates[torch.argmax(self.ei_scores)]
+        next_point = self.candidates[torch.argmax(self.ei_scores)]
 
         # Zoom-refine: the coarse candidates only locate the EI maximum to
-        # within one spacing. Re-score a much finer set confined to a small
-        # box around the coarse best point. This is cheap, since the box is
-        # a tiny fraction of the search bounds, and it recovers precision
-        # the coarse candidates alone cannot offer. The spacing of n points
-        # spread over d dimensions is (hi - lo) / (n^(1/d) - 1), which for a
-        # single dimension is exactly the grid step (hi - lo) / (n - 1).
+        # within one spacing. Re-score a finer set confined to a box around
+        # the best point so far. This is cheap, since the box is a fraction
+        # of the search bounds, and it recovers precision the coarse
+        # candidates alone cannot offer. The spacing of n points spread over
+        # d dimensions is (hi - lo) / (n^(1/d) - 1), which for a single
+        # dimension is exactly the grid step (hi - lo) / (n - 1).
         points_per_axis = self.n_candidates ** (1 / self.n_dims)
-        spacing = (self._upper - self._lower) / (points_per_axis - 1)
-        window = 2 * spacing
-        fine_lower = torch.maximum(self._lower, coarse_best - window)
-        fine_upper = torch.minimum(self._upper, coarse_best + window)
-        fine_candidates = self._candidates(fine_lower, fine_upper)
+        lower, upper = self._lower, self._upper
+        for _ in range(self.refinement_stages):
+            window = 2 * (upper - lower) / (points_per_axis - 1)
+            lower = torch.maximum(self._lower, next_point - window)
+            upper = torch.minimum(self._upper, next_point + window)
+            fine_candidates = self._candidates(lower, upper)
 
-        fine_preds = self.surrogate.predict(fine_candidates)
-        fine_ei = self.expected_improvement(
-            fine_preds["f_mean"], fine_preds["f_var"], current_best
-        )
+            fine_preds = self.surrogate.predict(fine_candidates)
+            fine_ei = self.expected_improvement(
+                fine_preds["f_mean"], fine_preds["f_var"], current_best
+            )
 
-        fine_best_index = torch.argmax(fine_ei)
-        next_point = fine_candidates[fine_best_index]
+            fine_best_index = torch.argmax(fine_ei)
+            next_point = fine_candidates[fine_best_index]
+            self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
 
         assert torch.all(next_point >= self._lower) and torch.all(
             next_point <= self._upper
         ), f"next_point {next_point.tolist()} left the search bounds"
 
-        self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
         return tuple(next_point.tolist())
 
     def __repr__(self) -> str:

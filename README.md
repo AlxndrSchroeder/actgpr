@@ -137,28 +137,29 @@ With several inputs the candidates are drawn from a seeded Sobol sequence instea
 
 Less precise than with one, and it is worth knowing why before trusting a result.
 
-Each iteration picks its next point in two passes: a coarse pass over the whole space, then a zoom pass that re-searches a box around the coarse winner. The box width is set by the candidate spacing, and candidates thin out quickly as inputs are added. With 500 candidates:
+Each iteration picks its next point in stages: a coarse pass over the whole space, then a refinement pass that re-searches a box around the best point so far. The box width follows the candidate spacing, and candidates thin out quickly as inputs are added. With 500 candidates:
 
-| inputs | candidates per axis | zoom box, as a share of each axis |
-|---|---|---|
-| 1 | 500 | 0.8% |
-| 2 | 22 | 18.7% |
-| 3 | 7.9 | **57.7%** |
+| inputs | candidates per axis | box after 1st refinement | after 2nd |
+|---|---|---|---|
+| 1 | 500 | 0.8% of each axis | not used |
+| 2 | 22 | 18.7% | 3.5% |
+| 3 | 7.9 | 57.7% | 33.2% |
 
-With one input the zoom is a real refinement. With three it still covers more than half of each axis, so it barely sharpens the coarse pass.
+This is why runs with more than one input refine **twice** and a single input refines **once**: in 1D the first box is already 0.8% of the axis, and a second pass would shrink it to the spacing between the points of a converged run, risking the same point being evaluated twice.
 
-Measured on the 3D test function in `run_test_3d.py` (`(x1-0.5)² + (x2+1)² + 0.2(x3-2)²`), with the defaults of 20 iterations and 500 candidates: `best_y` lands around `0.01` and `best_x` within about `0.1` of the true minimum. The 1D demo above, by contrast, lands within `5.5e-4`. So with several inputs, read a result as "the right region" rather than "the exact optimum".
+Measured on the 3D test function in `run_test_3d.py` (`(x1-0.5)² + (x2+1)² + 0.2(x3-2)²`), with 20 iterations:
 
-What helped, and what did not, on that function:
+| setting | `best_y` | distance to the true minimum | runtime |
+|---|---|---|---|
+| 500 candidates (default) | 0.0030 | 0.08 | 1.7 s |
+| 8000 candidates | 0.0014 | 0.04 | 15.6 s |
+| 1D demo, for comparison | - | 0.00055 | 1.6 s |
 
-| change | effect |
-|---|---|
-| more starting points plus a smaller `ei_threshold` (6 points, `1e-8`) | best: `best_y` to `0.0025` |
-| `n_candidates` from 500 to 8000 | some improvement, `best_y` to `0.0014` |
-| `n_candidates` from 500 to 2000 | no improvement |
-| `max_iterations` from 20 to 60 | no improvement; the run converged via `ei_threshold` at 29 evaluations either way |
+So with several inputs, read a result as "the right region" rather than "the exact optimum". Raising `n_candidates` to a few thousand is the most effective single change, at roughly nine times the runtime; 2000 was no better than 500, since what helps is more candidates *per axis*. More starting points together with a smaller `ei_threshold` also helps (six points and `1e-8` reached `best_y` 0.0025). Raising `max_iterations` alone does not: the run converges via `ei_threshold` at around 29 evaluations either way.
 
-Those are measurements on one function, not a benchmark. The structural fix, optimising the acquisition function continuously instead of over candidates, is planned rather than done.
+**No point is ever evaluated twice.** Across all of these runs, no new point landed within 0.1% of an earlier one, so the search does not stall by re-sampling where it already looked.
+
+These are measurements on one function, not a benchmark. Replacing the candidate stage with continuous optimisation of the acquisition function was tried and measured: it found a higher EI, but produced no better result at five times the runtime, so the bottleneck at this problem size is where points get placed, not how precisely the acquisition maximum is located.
 
 ### Example output
 
