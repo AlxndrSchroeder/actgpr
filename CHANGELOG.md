@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `history/next_point` and `history/lengthscale` have one column per
   input, and `final/best_x` and `meta.json`'s `best_x` hold one value per
   input
+- `results.h5` gains `history/point_and_output`: the evaluated input point
+  and its output in one array (columns `x1..xd`, `y`), one row per
+  iteration, so a viewer such as H5Web can draw the whole run as a single
+  heatmap. A heatmap shares one colour scale across all columns and the
+  inputs and output generally span different ranges, so each column is
+  scaled to [0, 1]; `column_min`/`column_max` attributes recover the raw
+  values, which also remain in `next_point`/`new_y`. Written for any number
+  of inputs
 - `actgpr._points`, a single private definition of input points and
   search bounds (`as_points`, `parse_search_bounds`, `format_values`)
   shared by the surrogate, the acquisition function, and the run, so they

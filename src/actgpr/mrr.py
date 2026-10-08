@@ -207,6 +207,9 @@ def save_hdf5(
         dimension), plus ``lengthscale``/``outputscale``/``noise`` when the
         surrogate reports them, giving the hyperparameters behind each
         iteration's fit (lengthscale has one column per input dimension).
+        Also ``point_and_output``, a heatmap-friendly view putting the
+        evaluated input point and its output in one array, each column
+        scaled to [0, 1] (see its own attributes).
         This is the single authoritative record of the run's history.
         Covers only *evaluated* iterations. See ``convergence_snapshot``
         below for the one fit that never reached evaluation.
@@ -279,6 +282,39 @@ def save_hdf5(
                 field,
                 data=np.array([res[field] for res in results], dtype=np.float64),
             )
+
+        # A single heatmap-friendly view of the run: the evaluated input
+        # point and its output side by side, one row per iteration. The raw
+        # values are already in next_point/new_y; a viewer draws a heatmap
+        # with one colour scale for every column, and the inputs and the
+        # output generally span different ranges, so each column is scaled
+        # to [0, 1] here. column_min/column_max make the raw values
+        # recoverable, so this view loses nothing.
+        if results:
+            combined = np.column_stack(
+                [
+                    np.array([res["next_point"] for res in results], dtype=np.float64),
+                    np.array([res["new_y"] for res in results], dtype=np.float64),
+                ]
+            )
+            column_min = combined.min(axis=0)
+            column_max = combined.max(axis=0)
+            span = np.where(column_max == column_min, 1.0, column_max - column_min)
+            scaled = history.create_dataset(
+                "point_and_output", data=(combined - column_min) / span
+            )
+            n_dims = combined.shape[1] - 1
+            scaled.attrs["description"] = (
+                "One row per iteration: the evaluated input point and its "
+                "output, each column scaled to [0, 1] so they share one "
+                "colour scale. Recover a raw value with "
+                "value * (column_max - column_min) + column_min, or read "
+                "next_point and new_y directly. A column whose values are "
+                "all equal is written as 0."
+            )
+            scaled.attrs["columns"] = [f"x{i + 1}" for i in range(n_dims)] + ["y"]
+            scaled.attrs["column_min"] = column_min
+            scaled.attrs["column_max"] = column_max
 
         # The surrogate hyperparameters behind each iteration's fit, present
         # only when the surrogate exposes them (see OptimisationRun.

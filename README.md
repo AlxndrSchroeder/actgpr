@@ -198,7 +198,13 @@ If the run raises partway through, `meta.json` and `results.h5` are still writte
 │                per input; plus lengthscale (one column per input) and
 │                outputscale/noise when the surrogate reports them, so a
 │                with_training run's retuning is visible per iteration
-│                rather than collapsed to its final value
+│                rather than collapsed to its final value;
+│                plus point_and_output, the evaluated input point and its
+│                output in one array (columns x1..xd, y), each column
+│                scaled to [0, 1] so a viewer such as H5Web can show them
+│                in a single heatmap under one colour scale. The raw values
+│                stay in next_point/new_y, and column_min/column_max on the
+│                dataset recover them
 ├── iterations/  iter_NNN/ GP snapshot arrays (omitted if store_snapshots=False);
 │                candidates and train_x have one column per input
 └── final/       best_x (one value per input), best_y, stop_reason,
