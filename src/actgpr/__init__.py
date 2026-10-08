@@ -1,15 +1,16 @@
 """Active GPR (Gaussian Process Regression) Optimisation package.
 
-This package finds the minimum of an expensive-to-evaluate scalar objective
-function by iteratively fitting a Gaussian Process surrogate and using active
-learning.
+This package finds the minimum of an expensive-to-evaluate objective
+function with one or more inputs and a single scalar output, by iteratively
+fitting a Gaussian Process surrogate and using active learning. The number of
+inputs is set by ``search_bounds``, one ``(lo, hi)`` pair per input.
 
 Exported classes
 ----------------
 OptimisationRun
     Orchestrates the active optimisation loop and MRR artifact writes.
 ObjectiveFn
-    Wraps the scalar Objective function being minimised.
+    Wraps a plain function of one or more inputs as the Objective.
 GPyTorchSurrogate
     Gaussian Process surrogate backend built on GPyTorch.
 Acquisition

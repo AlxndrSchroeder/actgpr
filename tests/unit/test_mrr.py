@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import h5py
+import numpy as np
 import pytest
 import torch
 
@@ -102,7 +103,7 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=end,
-            best_x=1.0,
+            best_x=(1.0,),
             best_y=-0.5,
             n_iterations=5,
             stop_reason="ei_threshold",
@@ -129,7 +130,7 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=start,
-            best_x=1.0,
+            best_x=(1.0,),
             best_y=-0.5,
             n_iterations=5,
             stop_reason="ei_threshold",
@@ -149,14 +150,14 @@ class TestWriteMeta:
             tmp_path,
             run_start=start,
             run_end=start,
-            best_x=1.23,
+            best_x=(1.23,),
             best_y=-0.45,
             n_iterations=10,
             stop_reason="max_iterations",
         )
 
         loaded = json.loads((tmp_path / "meta.json").read_text())
-        assert loaded["output_summary"]["best_x"] == 1.23
+        assert loaded["output_summary"]["best_x"] == [1.23]
         assert loaded["output_summary"]["best_y"] == -0.45
         assert loaded["output_summary"]["n_iterations"] == 10
         assert loaded["output_summary"]["stop_reason"] == "max_iterations"
@@ -188,7 +189,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -202,7 +203,7 @@ class TestSaveHdf5:
             assert f.attrs["fit_mode"] == "training"
 
             assert "final" in f
-            assert f["final"].attrs["best_x"] == 0.5
+            assert list(f["final"].attrs["best_x"]) == [0.5]
             assert "train_x" in f["final"]
             assert len(f["final/train_x"]) == 2
 
@@ -215,7 +216,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -266,7 +267,7 @@ class TestSaveHdf5:
             store_snapshots=True,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,
@@ -294,7 +295,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="ei_threshold",
             n_iterations=1,
@@ -308,6 +309,151 @@ class TestSaveHdf5:
             for field in ("candidates", "f_mean", "f_var", "ei_scores"):
                 assert f"converged_{field}" in final
 
+    def test_lengthscale_history_has_one_column_per_input_dimension(
+        self, tmp_path: Path
+    ):
+        """Test that per-dimension lengthscales are stored as (n_iter, d)."""
+        results = [
+            {
+                "iteration": i,
+                "next_point": 0.5,
+                "new_y": 0.2,
+                "current_best": 0.2,
+                "max_ei": 0.1,
+                "prediction_error": 0.05,
+                "improvement": 0.0,
+                "lengthscale": (0.5 * i, 1.0 * i, 2.0 * i),
+                "outputscale": (1.0,),
+                "noise": (1e-4,),
+            }
+            for i in (1, 2)
+        ]
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config={"noise": 1e-4},
+            store_snapshots=False,
+            final_train_x=torch.zeros(3, 3),
+            final_train_y=torch.zeros(3),
+            best_x=(0.5,),
+            best_y=0.2,
+            stop_reason="max_iterations",
+            n_iterations=2,
+            fitted_hyperparameters={
+                "lengthscale": (1.0, 2.0, 4.0),
+                "outputscale": (1.0,),
+                "noise": (1e-4,),
+            },
+        )
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            assert f["history/lengthscale"].shape == (2, 3)
+            assert f["history/outputscale"].shape == (2, 1)
+            assert list(f["final"].attrs["fitted_lengthscale"]) == [1.0, 2.0, 4.0]
+
+    def _results_for(self, points: list[list[float]], outputs: list[float]):
+        """Build result records for the given evaluated points and outputs."""
+        return [
+            {
+                "iteration": i + 1,
+                "next_point": tuple(point),
+                "new_y": output,
+                "current_best": min(outputs[: i + 1]),
+                "max_ei": 0.1,
+                "prediction_error": 0.0,
+                "improvement": 0.0,
+            }
+            for i, (point, output) in enumerate(zip(points, outputs))
+        ]
+
+    def _save(self, tmp_path: Path, results, n_dims: int):
+        """Write a minimal record holding the given results."""
+        mrr.save_hdf5(
+            tmp_path,
+            results=results,
+            config={"n_dims": n_dims},
+            store_snapshots=False,
+            final_train_x=torch.zeros(2, n_dims),
+            final_train_y=torch.zeros(2),
+            best_x=tuple([0.0] * n_dims),
+            best_y=0.0,
+            stop_reason="max_iterations",
+            n_iterations=len(results),
+        )
+
+    def test_point_and_output_holds_every_input_plus_the_output(
+        self, tmp_path: Path
+    ) -> None:
+        """Test the heatmap view: one column per input, then one for y."""
+        results = self._results_for(
+            [[0.0, 10.0, -1.0], [2.0, 20.0, 1.0], [1.0, 15.0, 0.0]],
+            [5.0, 1.0, 3.0],
+        )
+        self._save(tmp_path, results, n_dims=3)
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            view = f["history/point_and_output"]
+
+            assert view.shape == (3, 4)
+            assert list(view.attrs["columns"]) == ["x1", "x2", "x3", "y"]
+
+    def test_point_and_output_scales_each_column_to_the_unit_range(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that columns are comparable under one shared colour scale.
+
+        Inputs and outputs span different ranges, so a heatmap of the raw
+        values would show only the widest column.
+        """
+        results = self._results_for(
+            [[0.0, 10.0], [2.0, 20.0], [1.0, 15.0]], [5.0, 1.0, 3.0]
+        )
+        self._save(tmp_path, results, n_dims=2)
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            values = f["history/point_and_output"][:]
+
+            assert values.min() == pytest.approx(0.0)
+            assert values.max() == pytest.approx(1.0)
+            # x1 was 0, 2, 1 over the range [0, 2]
+            assert values[:, 0] == pytest.approx([0.0, 1.0, 0.5])
+
+    def test_point_and_output_raw_values_are_recoverable(self, tmp_path: Path) -> None:
+        """Test that scaling loses nothing: column_min/max invert it."""
+        results = self._results_for(
+            [[0.0, 10.0], [2.0, 20.0], [1.0, 15.0]], [5.0, 1.0, 3.0]
+        )
+        self._save(tmp_path, results, n_dims=2)
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            view = f["history/point_and_output"]
+            lo, hi = view.attrs["column_min"], view.attrs["column_max"]
+            recovered = view[:] * (hi - lo) + lo
+
+            assert recovered[:, :-1] == pytest.approx(f["history/next_point"][:])
+            assert recovered[:, -1] == pytest.approx(f["history/new_y"][:])
+
+    def test_point_and_output_handles_a_constant_column(self, tmp_path: Path) -> None:
+        """Test that an input that never changed does not divide by zero."""
+        results = self._results_for([[1.0, 0.0], [1.0, 2.0]], [4.0, 2.0])
+        self._save(tmp_path, results, n_dims=2)
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            values = f["history/point_and_output"][:]
+
+            assert np.all(np.isfinite(values))
+            assert values[:, 0] == pytest.approx([0.0, 0.0])
+
+    def test_point_and_output_also_written_for_a_single_input(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that the view exists for any number of inputs, not just many."""
+        self._save(tmp_path, self._results_for([[0.0], [1.0]], [2.0, 1.0]), n_dims=1)
+
+        with h5py.File(tmp_path / "results.h5", "r") as f:
+            assert f["history/point_and_output"].shape == (2, 2)
+            assert list(f["history/point_and_output"].attrs["columns"]) == ["x1", "y"]
+
     def test_no_convergence_fields_without_convergence_snapshot(
         self, tmp_path: Path, dummy_data
     ):
@@ -319,7 +465,7 @@ class TestSaveHdf5:
             store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=0.5,
+            best_x=(0.5,),
             best_y=0.2,
             stop_reason="max_iterations",
             n_iterations=1,

@@ -1,7 +1,11 @@
 """Surrogate model module for active GPR optimisation."""
 
+from collections.abc import Sequence
+
 import torch
 import gpytorch
+
+from actgpr._points import as_points
 
 # Jitter added to the covariance diagonal during Cholesky decomposition to
 # keep the matrix numerically positive definite (float64 throughout).
@@ -12,7 +16,9 @@ class ExactGPModel(gpytorch.models.ExactGP):
     """An exact Gaussian Process model with Constant mean and scaled RBF kernel.
 
     This class defines the structural prior components (mean and covariance) of
-    the GP model.
+    the GP model. The RBF kernel has one lengthscale per input dimension
+    (automatic relevance determination), since inputs of a multi-dimensional
+    problem generally vary on different scales.
     """
 
     def __init__(
@@ -25,23 +31,26 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The training input points.
+        train_x : torch.Tensor of shape (n, d)
+            The training input points, one row per point.
         train_y : torch.Tensor of shape (n,)
             The training outputs.
         likelihood : gpytorch.likelihoods.GaussianLikelihood
             The GPyTorch likelihood mapping latent outputs to observed targets.
         """
         super().__init__(train_x, train_y, likelihood)
+        n_dims = train_x.shape[-1] if train_x.ndim > 1 else 1
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=n_dims)
+        )
 
     def forward(self, x: torch.Tensor) -> gpytorch.distributions.MultivariateNormal:
         """Compute the prior distribution at input points x.
 
         Parameters
         ----------
-        x : torch.Tensor of shape (m,)
+        x : torch.Tensor of shape (m, d)
             The input points to evaluate the prior mean and covariance at.
 
         Returns
@@ -55,7 +64,7 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the ExactGPModel."""
-        n = self.train_inputs[0].numel() if self.train_inputs else 0
+        n = self.train_inputs[0].shape[0] if self.train_inputs else 0
         return f"ExactGPModel(n_points={n})"
 
 
@@ -75,7 +84,7 @@ class GPyTorchSurrogate:
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the GPyTorchSurrogate."""
-        n = self.train_x.numel() if self.train_x is not None else 0
+        n = self.train_x.shape[0] if self.train_x is not None else 0
         fitted = self.model is not None
         return f"GPyTorchSurrogate(n_points={n}, fitted={fitted})"
 
@@ -88,23 +97,29 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point. A flat tensor is read as ``n`` points in one dimension.
         train_y : torch.Tensor of shape (n,)
-            The corresponding Objective outputs.
+            The corresponding Objective outputs, one per input point.
 
         Raises
         ------
         ValueError
-            If train_x and train_y shapes are not compatible.
+            If train_y is not one-dimensional or does not hold one output
+            per input point.
         """
-        if train_x.shape != train_y.shape:
+        points = as_points(train_x)
+        outputs = torch.as_tensor(train_y, dtype=torch.float64)
+        if outputs.ndim != 1 or outputs.shape[0] != points.shape[0]:
             raise ValueError(
-                f"Shape mismatch: train_x shape {train_x.shape} must match train_y shape {train_y.shape}"
+                f"Shape mismatch: train_x holds {points.shape[0]} input points "
+                f"but train_y has shape {tuple(outputs.shape)}; expected "
+                f"({points.shape[0]},)."
             )
 
-        self.train_x = train_x.double()
-        self.train_y = train_y.double()
+        self.train_x = points
+        self.train_y = outputs
 
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood().double()
         self.model = ExactGPModel(self.train_x, self.train_y, self.likelihood).double()
@@ -124,10 +139,11 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point.
         train_y : torch.Tensor of shape (n,)
-            The corresponding evaluations of the objective.
+            The corresponding Objective outputs.
         training_iter : int, optional
             Number of iterations for hyperparameter optimisation, by default 50.
         lr : float, optional
@@ -156,7 +172,7 @@ class GPyTorchSurrogate:
         self,
         train_x: torch.Tensor,
         train_y: torch.Tensor,
-        lengthscale: float = 1.0,
+        lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
     ) -> None:
@@ -167,21 +183,38 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        train_x : torch.Tensor of shape (n,)
-            The input points where the objective was evaluated.
+        train_x : torch.Tensor of shape (n,) or (n, d)
+            The input points where the Objective was evaluated, one row per
+            point.
         train_y : torch.Tensor of shape (n,)
-            The corresponding evaluations of the objective.
-        lengthscale : float, optional
-            The RBF kernel lengthscale, by default 1.0.
+            The corresponding Objective outputs.
+        lengthscale : float or sequence of float, optional
+            The RBF kernel lengthscale, by default 1.0. A single value is used
+            for every input dimension; a sequence gives one value per input
+            dimension, in order.
         outputscale : float, optional
             The kernel outputscale (signal variance), by default 1.0.
         noise : float, optional
             The observation noise variance, by default 1e-4.
+
+        Raises
+        ------
+        ValueError
+            If lengthscale is a sequence whose length is not the number of
+            input dimensions.
         """
         self._setup_model(train_x, train_y)
 
+        n_dims = self.train_x.shape[1]
+        lengthscales = torch.as_tensor(lengthscale, dtype=torch.float64)
+        if lengthscales.ndim > 0 and lengthscales.numel() != n_dims:
+            raise ValueError(
+                f"lengthscale needs one value per input dimension ({n_dims}), "
+                f"got {lengthscales.numel()}."
+            )
+
         # Set hyperparameters to user-specified values
-        self.model.covar_module.base_kernel.lengthscale = lengthscale
+        self.model.covar_module.base_kernel.lengthscale = lengthscales
         self.model.covar_module.outputscale = outputscale
         self.likelihood.noise = noise
 
@@ -191,7 +224,7 @@ class GPyTorchSurrogate:
         for param in self.likelihood.parameters():
             param.requires_grad = False
 
-    def hyperparameters(self) -> dict[str, float]:
+    def hyperparameters(self) -> dict[str, tuple[float, ...]]:
         """Return the GP's current kernel and likelihood hyperparameters.
 
         After ``fit_no_training`` these are the values that were passed in.
@@ -201,8 +234,10 @@ class GPyTorchSurrogate:
 
         Returns
         -------
-        dict[str, float]
-            ``lengthscale``, ``outputscale``, and ``noise``.
+        dict[str, tuple of float]
+            ``lengthscale`` with one value per input dimension, and
+            ``outputscale`` and ``noise`` with one value each. Every entry is
+            a tuple so that callers can record and render all three alike.
 
         Raises
         ------
@@ -214,12 +249,11 @@ class GPyTorchSurrogate:
                 "The model must be fitted before reading hyperparameters."
             )
 
+        kernel = self.model.covar_module
         return {
-            "lengthscale": float(
-                self.model.covar_module.base_kernel.lengthscale.item()
-            ),
-            "outputscale": float(self.model.covar_module.outputscale.item()),
-            "noise": float(self.likelihood.noise.item()),
+            "lengthscale": tuple(kernel.base_kernel.lengthscale.flatten().tolist()),
+            "outputscale": (float(kernel.outputscale.item()),),
+            "noise": (float(self.likelihood.noise.item()),),
         }
 
     def predict(
@@ -231,8 +265,9 @@ class GPyTorchSurrogate:
 
         Parameters
         ----------
-        test_x : torch.Tensor of shape (m,)
-            The test input points to predict at.
+        test_x : torch.Tensor of shape (m, d), or (m,) when d is 1
+            The input points to predict at, with as many coordinates per
+            point as the training data.
         n_samples : int, optional
             Number of samples to draw from the latent function's predictive
             posterior, by default 0. Sampling is skipped entirely when 0,
@@ -244,15 +279,16 @@ class GPyTorchSurrogate:
             A dictionary containing prediction components:
 
             - "f_preds": predictive distribution (MultivariateNormal) of the
-              latent function f(test_x).
+              latent function f(test_x). Its full covariance matrix is
+              available on demand as ``f_preds.covariance_matrix``, shape
+              (m, m). It is not computed eagerly, since it grows with m²
+              and the optimisation loop needs only the diagonal.
             - "observed_pred": predictive distribution (MultivariateNormal) of
               observed targets y(test_x) = f(test_x) + noise.
             - "f_mean": predicted posterior mean of the latent function,
               torch.Tensor of shape (m,).
             - "f_var": predicted posterior variance of the latent function,
               torch.Tensor of shape (m,).
-            - "f_covar": predicted posterior covariance matrix,
-              torch.Tensor of shape (m, m).
             - "f_samples": samples drawn from the latent function's predictive
               posterior, torch.Tensor of shape (n_samples, m). Only present
               when n_samples > 0.
@@ -261,11 +297,13 @@ class GPyTorchSurrogate:
         ------
         RuntimeError
             If fit_and_train() or fit_no_training() has not been called prior to predicting.
+        ValueError
+            If test_x does not have one coordinate per input dimension.
         """
         if self.model is None or self.likelihood is None:
             raise RuntimeError("The model must be fitted before predicting.")
 
-        test_x_double = test_x.double()
+        test_x_double = as_points(test_x, n_dims=self.train_x.shape[1])
         self.model.eval()
         self.likelihood.eval()
 
@@ -279,7 +317,6 @@ class GPyTorchSurrogate:
 
             f_mean = f_preds.mean
             f_var = f_preds.variance
-            f_covar = f_preds.covariance_matrix
             f_samples = (
                 f_preds.sample(sample_shape=torch.Size([n_samples]))
                 if n_samples > 0
@@ -290,14 +327,12 @@ class GPyTorchSurrogate:
         assert torch.all(torch.isfinite(f_mean)), "f_mean contains non-finite values"
         assert torch.all(f_var >= 0), "f_var contains negative variance values"
         assert torch.all(torch.isfinite(f_var)), "f_var contains non-finite values"
-        assert torch.all(torch.isfinite(f_covar)), "f_covar contains non-finite values"
 
         preds: dict[str, torch.Tensor | gpytorch.distributions.MultivariateNormal] = {
             "f_preds": f_preds,
             "observed_pred": observed_pred,
             "f_mean": f_mean,
             "f_var": f_var,
-            "f_covar": f_covar,
         }
 
         if f_samples is not None:

@@ -9,19 +9,41 @@ SEED = 25
 
 
 def test_objective_evaluation(objective: ObjectiveFn) -> None:
-    """Test that the objective evaluates positional inputs correctly."""
-    # Single inputs
-    assert objective.evaluate(2.0) == (4.0,)
-    assert objective.evaluate(-3.0) == (9.0,)
-    assert objective.evaluate(0.0) == (0.0,)
+    """Test that one call evaluates one 1D input point to one float."""
+    assert objective.evaluate(2.0) == 4.0
+    assert objective.evaluate(-3.0) == 9.0
+    assert objective.evaluate(0.0) == 0.0
 
-    # Multiple inputs
-    assert objective.evaluate(2.0, -3.0, 0.0) == (4.0, 9.0, 0.0)
+
+def test_several_arguments_are_the_coordinates_of_one_point(
+    objective: ObjectiveFn,
+) -> None:
+    """Test that evaluate(x1, x2, x3) is one 3D point, not three 1D points.
+
+    The default Objective sums the squared coordinates, so a 3D point gives
+    a single value rather than one value per argument.
+    """
+    assert objective.evaluate(2.0, -3.0, 0.0) == 13.0
+
+
+def test_coordinates_reach_the_function_in_order() -> None:
+    """Test that func receives exactly one argument per coordinate."""
+    obj = ObjectiveFn(lambda x1, x2, x3: 100 * x1 + 10 * x2 + x3)
+
+    assert obj.evaluate(1.0, 2.0, 3.0) == 123.0
+
+
+def test_wrong_number_of_coordinates_propagates_the_original_error() -> None:
+    """Test that a func expecting 2 inputs fails clearly when given 3."""
+    obj = ObjectiveFn(lambda x1, x2: x1 + x2)
+
+    with pytest.raises(TypeError, match="positional argument"):
+        obj.evaluate(1.0, 2.0, 3.0)
 
 
 def test_objective_empty_input(objective: ObjectiveFn) -> None:
-    """Test that the objective raises ValueError when no inputs are provided."""
-    with pytest.raises(ValueError, match="At least one input argument"):
+    """Test that evaluate() without coordinates raises ValueError."""
+    with pytest.raises(ValueError, match="coordinates of one input point"):
         objective.evaluate()
 
 
@@ -36,27 +58,26 @@ def test_objective_raises_on_wrong_type(
 
 def test_objective_accepts_int_input(objective: ObjectiveFn) -> None:
     """Test that the objective handles int inputs via implicit float conversion."""
-    assert objective.evaluate(3) == (9.0,)
+    assert objective.evaluate(3) == 9.0
 
 
 @pytest.mark.parametrize("x", [-5.0, -1.0, 0.0, 1.0, 5.0])
 def test_objective_output_is_non_negative(objective: ObjectiveFn, x: float) -> None:
     """Test scientific invariant: x² is always non-negative."""
-    (result,) = objective.evaluate(x)
-    assert result >= 0
+    assert objective.evaluate(x) >= 0
 
 
 def test_objective_repr(objective: ObjectiveFn) -> None:
     """Test the string representation of the default ObjectiveFn."""
-    assert repr(objective) == "ObjectiveFn(function=x^2)"
+    assert repr(objective) == "ObjectiveFn(function=sum(x_i^2))"
 
 
 def test_custom_callable_objective() -> None:
     """Test custom objective initialisation and evaluation."""
     obj = ObjectiveFn(lambda x: (x + 2) ** 2)
 
-    assert obj.evaluate(1.0) == (9.0,)
-    assert obj.evaluate(-2.0) == (0.0,)
+    assert obj.evaluate(1.0) == 9.0
+    assert obj.evaluate(-2.0) == 0.0
     assert repr(obj) == "ObjectiveFn(function=custom_function)"
 
 
@@ -112,16 +133,15 @@ class TestJitter:
         torch.manual_seed(SEED)
         obj = ObjectiveFn(lambda x: x**2, jitter=0.0)
 
-        assert obj.evaluate(2.0, -3.0) == (4.0, 9.0)
+        assert obj.evaluate(2.0) == 4.0
+        assert obj.evaluate(-3.0) == 9.0
 
     def test_positive_jitter_perturbs_result(self) -> None:
         """Test that a positive jitter changes the evaluated output."""
         torch.manual_seed(SEED)
         obj = ObjectiveFn(lambda x: x**2, jitter=1.0)
 
-        (result,) = obj.evaluate(2.0)
-
-        assert result != 4.0
+        assert obj.evaluate(2.0) != 4.0
 
     def test_jitter_reproducible_without_seeding_anything(self) -> None:
         """Test that two ObjectiveFn objects produce the same noise sequence.
@@ -134,7 +154,9 @@ class TestJitter:
         obj_a = ObjectiveFn(lambda x: x**2, jitter=0.5)
         obj_b = ObjectiveFn(lambda x: x**2, jitter=0.5)
 
-        assert obj_a.evaluate(1.0, 2.0, 3.0) == obj_b.evaluate(1.0, 2.0, 3.0)
+        assert [obj_a.evaluate(x) for x in (1.0, 2.0, 3.0)] == [
+            obj_b.evaluate(x) for x in (1.0, 2.0, 3.0)
+        ]
 
     def test_default_jitter_seed_is_25(self) -> None:
         """Test the documented default seed."""
@@ -157,28 +179,39 @@ class TestJitter:
         expected = torch.randn(1).item()
 
         torch.manual_seed(SEED)
-        ObjectiveFn(lambda x: x**2, jitter=0.5).evaluate(1.0, 2.0, 3.0)
+        noisy = ObjectiveFn(lambda x: x**2, jitter=0.5)
+        for x in (1.0, 2.0, 3.0):
+            noisy.evaluate(x)
 
         assert torch.randn(1).item() == expected
 
-    def test_jitter_is_independent_per_call_argument(self) -> None:
-        """Test that jitter is drawn independently for each evaluated point.
+    def test_jitter_is_independent_per_call(self) -> None:
+        """Test that jitter is drawn afresh for every evaluation.
 
-        Same underlying value (x=2.0) evaluated twice in one call should not
-        get identical noise, or jitter would be indistinguishable from a
-        single shared offset rather than per-point sensor noise.
+        The same input point evaluated twice should not get identical noise,
+        or jitter would be indistinguishable from a single shared offset
+        rather than per-evaluation sensor noise.
         """
-        torch.manual_seed(SEED)
         obj = ObjectiveFn(lambda x: x**2, jitter=1.0)
 
-        result_1, result_2 = obj.evaluate(2.0, 2.0)
+        assert obj.evaluate(2.0) != obj.evaluate(2.0)
 
-        assert result_1 != result_2
+    def test_jitter_adds_one_draw_to_a_multi_dimensional_point(self) -> None:
+        """Test that a 3D point gets one noise value, not one per coordinate."""
+        exact = ObjectiveFn(lambda x1, x2, x3: x1 + x2 + x3)
+        noisy = ObjectiveFn(lambda x1, x2, x3: x1 + x2 + x3, jitter=0.5)
+        expected_noise = torch.randn(
+            1, generator=torch.Generator().manual_seed(25)
+        ).item()
+
+        offset = noisy.evaluate(1.0, 2.0, 3.0) - exact.evaluate(1.0, 2.0, 3.0)
+
+        assert offset == pytest.approx(0.5 * expected_noise)
 
     def test_repr_includes_jitter_when_nonzero(self) -> None:
         """Test that repr surfaces a non-default jitter value."""
         obj = ObjectiveFn(jitter=0.1)
-        assert repr(obj) == "ObjectiveFn(function=x^2, jitter=0.1, seed=25)"
+        assert repr(obj) == "ObjectiveFn(function=sum(x_i^2), jitter=0.1, seed=25)"
 
     def test_repr_omits_jitter_when_zero(self, objective: ObjectiveFn) -> None:
         """Test that repr matches prior output when jitter is off."""

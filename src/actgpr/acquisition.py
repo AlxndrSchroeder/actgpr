@@ -11,10 +11,28 @@ Jones, D. R., Schonlau, M., & Welch, W. J. (1998).
     https://doi.org/10.1023/A:1008306431147
 """
 
+from collections.abc import Sequence
+
 import torch
 from torch.distributions import Normal
+from torch.quasirandom import SobolEngine
 
+from actgpr._points import parse_search_bounds
 from actgpr.surrogate import GPyTorchSurrogate
+
+# Seed for the candidate sampler used with more than one input dimension.
+# Fixed so that a multi-dimensional run is reproducible out of the box, the
+# same reasoning as ObjectiveFn's DEFAULT_JITTER_SEED.
+DEFAULT_CANDIDATE_SEED = 25
+
+# Candidates scored per stage when the caller does not choose. One input
+# gets 500, which is already 500 per axis. More inputs get 4000: candidates
+# spread over d axes, so the same count thins out quickly, and measurement
+# on a three-input problem over twelve seeds showed both a better typical
+# result (median best_y 0.0037 against 0.0095 at 500) and a far better
+# worst one (0.024 against 0.215), for a few seconds per run.
+DEFAULT_CANDIDATES_ONE_INPUT = 500
+DEFAULT_CANDIDATES_SEVERAL_INPUTS = 4000
 
 
 class Acquisition:
@@ -22,6 +40,14 @@ class Acquisition:
 
     Stores a reference to the surrogate, search bounds, and candidate count.
     Scores candidate input points and selects the next input point to evaluate.
+
+    Candidates are placed in stages: a coarse set covering the whole search
+    bounds, then one or two refinement sets in a shrinking box around the
+    best point found so far (see ``refinement_stages``).
+    With one input dimension both sets are evenly spaced grids. With more,
+    a grid is unaffordable (500 per axis is 125 million points in 3D), so
+    both sets are drawn from a scrambled Sobol sequence, which covers the
+    space evenly without growing with the number of dimensions.
 
     Public Methods
     --------------
@@ -34,8 +60,10 @@ class Acquisition:
     def __init__(
         self,
         surrogate: GPyTorchSurrogate,
-        search_bounds: tuple[float, float],
-        n_candidates: int = 500,
+        search_bounds: Sequence[float] | Sequence[Sequence[float]],
+        n_candidates: int | None = None,
+        seed: int = DEFAULT_CANDIDATE_SEED,
+        refinement_stages: int | None = None,
     ) -> None:
         """Initialize the Acquisition function.
 
@@ -43,26 +71,78 @@ class Acquisition:
         ----------
         surrogate : GPyTorchSurrogate
             The fitted surrogate model used to predict f_mean and f_var.
-        search_bounds : tuple[float, float]
-            The closed interval (lo, hi) within which candidates are generated.
-        n_candidates : int, optional
-            Number of evenly spaced candidate points to evaluate, by default
-            500 (matches the OptimisationRun default).
+        search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
+            The closed interval of each input dimension within which
+            candidates are generated. A single pair means one dimension.
+        n_candidates : int or None, optional
+            Number of candidate points scored in each stage. If None (the
+            default), 500 for a single input dimension and 4000 for more,
+            since the same count spread over several axes thins out quickly.
+            Raising it further mainly improves the worst case rather than the
+            typical one; prediction cost grows faster than linearly with it,
+            so a few thousand is a sensible ceiling.
+        seed : int, optional
+            Seed for the Sobol candidate sampler used with more than one
+            input dimension, by default 25. Unused in one dimension, where
+            candidates are an evenly spaced grid.
+        refinement_stages : int or None, optional
+            How many times the zoom refinement shrinks its box around the
+            best candidate. If None (the default), 1 for a single input
+            dimension and 2 for more.
+
+            Candidates thin out as dimensions are added, so one stage leaves
+            a box covering more than half of each axis in three dimensions,
+            which barely refines anything, while in one dimension it is
+            already 0.8% of the axis. A second stage in one dimension would
+            shrink the box to the spacing between the points of a converged
+            run, risking evaluating the same point twice, which is the
+            stagnation the refinement exists to prevent.
         """
         self.surrogate = surrogate
-        self.search_bounds = search_bounds
-        self.n_candidates = n_candidates
+        self.search_bounds = parse_search_bounds(search_bounds)
+        self.n_dims = len(self.search_bounds)
+        self.n_candidates = (
+            n_candidates
+            if n_candidates is not None
+            else (
+                DEFAULT_CANDIDATES_ONE_INPUT
+                if self.n_dims == 1
+                else DEFAULT_CANDIDATES_SEVERAL_INPUTS
+            )
+        )
+        self.seed = seed
+        self.refinement_stages = (
+            refinement_stages if refinement_stages is not None else min(self.n_dims, 2)
+        )
+
+        self._lower = torch.tensor(
+            [lo for lo, _ in self.search_bounds], dtype=torch.float64
+        )
+        self._upper = torch.tensor(
+            [hi for _, hi in self.search_bounds], dtype=torch.float64
+        )
+        self._sampler = SobolEngine(self.n_dims, scramble=True, seed=seed)
 
         # Populated by find_next_input_point for downstream use (e.g. plotting)
         self.candidates: torch.Tensor | None = None
         self.f_mean: torch.Tensor | None = None
         self.f_var: torch.Tensor | None = None
-        self.f_covar: torch.Tensor | None = None
         self.ei_scores: torch.Tensor | None = None
         # The surrogate's posterior mean at the returned next_point itself
         # (post zoom-refinement), distinct from f_mean, which covers only
-        # the coarse candidate grid and may not include next_point exactly.
+        # the coarse candidates and may not include next_point exactly.
         self.next_point_mean: float | None = None
+
+    def _candidates(self, lower: torch.Tensor, upper: torch.Tensor) -> torch.Tensor:
+        """Place n_candidates input points inside the box [lower, upper]."""
+        if self.n_dims == 1:
+            grid = torch.linspace(
+                lower.item(), upper.item(), self.n_candidates, dtype=torch.float64
+            )
+            return grid.unsqueeze(-1)
+
+        unit = self._sampler.draw(self.n_candidates, dtype=torch.float64)
+        return lower + (upper - lower) * unit
 
     def expected_improvement(
         self,
@@ -140,16 +220,16 @@ class Acquisition:
 
         return ei
 
-    def find_next_input_point(self, current_best: float) -> float:
+    def find_next_input_point(self, current_best: float) -> tuple[float, ...]:
         """Find the next input point to evaluate by maximising Expected Improvement.
 
-        Generates a dense grid of candidate points within the search bounds,
-        predicts posterior mean and variance using the surrogate, scores them
-        with Expected Improvement, and locates the candidate with the highest
-        score. That coarse grid's spacing caps how precisely the true EI
-        maximum can be located, so a second, much finer grid is then scored
-        inside a small window around the coarse best point, and the refined
-        maximum is returned instead.
+        Places candidates across the search bounds, predicts posterior mean
+        and variance using the surrogate, scores them with Expected
+        Improvement, and locates the candidate with the highest score. The
+        coarse candidates' spacing caps how precisely the true EI maximum
+        can be located, so a finer set is then scored inside a box around
+        the best point, once or twice depending on ``refinement_stages``,
+        and the refined maximum is returned instead.
 
         Parameters
         ----------
@@ -158,22 +238,21 @@ class Acquisition:
 
         Returns
         -------
-        float
-            The input point with the highest EI score, refined beyond the
-            coarse grid's resolution.
+        tuple of float
+            The coordinates of the input point with the highest EI score,
+            one per input dimension, refined beyond the coarse candidates'
+            resolution.
 
         Raises
         ------
         RuntimeError
             If the surrogate has not been fitted prior to calling.
         """
-        lo, hi = self.search_bounds
-        self.candidates = torch.linspace(lo, hi, self.n_candidates)
+        self.candidates = self._candidates(self._lower, self._upper)
 
         preds = self.surrogate.predict(self.candidates)
         self.f_mean = preds["f_mean"]
         self.f_var = preds["f_var"]
-        self.f_covar = preds["f_covar"]
 
         assert isinstance(self.f_mean, torch.Tensor)
         assert isinstance(self.f_var, torch.Tensor)
@@ -181,34 +260,41 @@ class Acquisition:
         self.ei_scores = self.expected_improvement(
             self.f_mean, self.f_var, current_best
         )
+        next_point = self.candidates[torch.argmax(self.ei_scores)]
 
-        best_index = torch.argmax(self.ei_scores)
-        coarse_best_x = self.candidates[best_index].item()
+        # Zoom-refine: the coarse candidates only locate the EI maximum to
+        # within one spacing. Re-score a finer set confined to a box around
+        # the best point so far. This is cheap, since the box is a fraction
+        # of the search bounds, and it recovers precision the coarse
+        # candidates alone cannot offer. The spacing of n points spread over
+        # d dimensions is (hi - lo) / (n^(1/d) - 1), which for a single
+        # dimension is exactly the grid step (hi - lo) / (n - 1).
+        points_per_axis = self.n_candidates ** (1 / self.n_dims)
+        lower, upper = self._lower, self._upper
+        for _ in range(self.refinement_stages):
+            window = 2 * (upper - lower) / (points_per_axis - 1)
+            lower = torch.maximum(self._lower, next_point - window)
+            upper = torch.minimum(self._upper, next_point + window)
+            fine_candidates = self._candidates(lower, upper)
 
-        # Zoom-refine: the coarse grid can only locate the EI maximum to
-        # within one grid spacing. Re-score a much finer grid confined to a
-        # small window around the coarse best point. This is cheap, since
-        # the window is a tiny fraction of the full search bounds, and it
-        # recovers precision the coarse grid alone cannot offer.
-        spacing = (hi - lo) / (self.n_candidates - 1)
-        window = 2 * spacing
-        fine_lo = max(lo, coarse_best_x - window)
-        fine_hi = min(hi, coarse_best_x + window)
-        fine_candidates = torch.linspace(fine_lo, fine_hi, self.n_candidates)
+            fine_preds = self.surrogate.predict(fine_candidates)
+            fine_ei = self.expected_improvement(
+                fine_preds["f_mean"], fine_preds["f_var"], current_best
+            )
 
-        fine_preds = self.surrogate.predict(fine_candidates)
-        fine_ei = self.expected_improvement(
-            fine_preds["f_mean"], fine_preds["f_var"], current_best
-        )
+            fine_best_index = torch.argmax(fine_ei)
+            next_point = fine_candidates[fine_best_index]
+            self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
 
-        fine_best_index = torch.argmax(fine_ei)
-        self.next_point_mean = fine_preds["f_mean"][fine_best_index].item()
-        return fine_candidates[fine_best_index].item()
+        assert torch.all(next_point >= self._lower) and torch.all(
+            next_point <= self._upper
+        ), f"next_point {next_point.tolist()} left the search bounds"
+
+        return tuple(next_point.tolist())
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the Acquisition."""
-        lo, hi = self.search_bounds
         return (
-            f"Acquisition(method=EI, bounds=({lo}, {hi}), "
+            f"Acquisition(method=EI, bounds={list(self.search_bounds)}, "
             f"n_candidates={self.n_candidates})"
         )

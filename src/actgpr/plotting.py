@@ -32,6 +32,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import Slider
 
+from actgpr._points import format_values
+
 # Half-width of the shaded confidence band in standard deviations;
 # ±2σ covers ≈95% of a Gaussian posterior.
 CI_STD_FACTOR = 2.0
@@ -46,6 +48,31 @@ EI_LOG_FLOOR_DEFAULT = 1e-8
 # Surrogate hyperparameters reported in plot titles, when available. Named
 # once so the iteration and metric figures stay in step.
 HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
+
+
+def _as_values(stored: object) -> tuple[float, ...]:
+    """Read stored per-dimension values as a tuple, whether scalar or array."""
+    # np.atleast_1d also accepts the scalars v0.3.0 wrote for best_x,
+    # next_point and the hyperparameters, so results.h5 files from before
+    # multi-dimensional inputs still load.
+    return tuple(float(value) for value in np.atleast_1d(stored))
+
+
+def _axis_values(points: torch.Tensor) -> torch.Tensor:
+    """Return the single coordinate of one-dimensional input points."""
+    # Points are (n, 1) since actgpr handles several input dimensions;
+    # results.h5 files written by v0.3.0 still hold them as flat (n,).
+    if points.ndim == 1:
+        return points
+    # Taking column 0 of a multi-dimensional point would draw a figure that
+    # looks valid and shows only x1, so refuse here, where the 1D
+    # assumption is made, rather than only in the public entry points.
+    if points.shape[1] != 1:
+        raise ValueError(
+            f"This figure draws one input dimension, but the points have "
+            f"{points.shape[1]}."
+        )
+    return points[:, 0]
 
 
 def _name_window(fig: Figure, title: str) -> None:
@@ -74,22 +101,24 @@ def _plot_gp(
     """Plot GP predictions from raw tensors.
 
     This is the core GP plotting function. All other GP plot functions
-    delegate to this one.
+    delegate to this one. It draws a problem with one input dimension, so
+    input points are passed as their single coordinate.
 
     Parameters
     ----------
     candidates : torch.Tensor of shape (m,)
-        The x-axis grid of input points.
+        The x-axis grid: the single coordinate of each candidate point.
     f_mean : torch.Tensor of shape (m,)
         The GP posterior mean at each candidate point.
     f_var : torch.Tensor of shape (m,)
         The GP posterior variance at each candidate point.
     train_x : torch.Tensor of shape (n,)
-        The training input points.
+        The single coordinate of each training input point.
     train_y : torch.Tensor of shape (n,)
         The training output values.
     next_point : float or None, optional
-        The selected next input point. If provided, a vertical line is drawn.
+        The single coordinate of the selected next input point. If provided,
+        a vertical line is drawn.
     ax : matplotlib.axes.Axes or None, optional
         An existing axes to draw on. If None, a new figure and axes are created.
     show : bool, optional
@@ -162,10 +191,12 @@ def _plot_acquisition(
 ) -> tuple[Figure, Axes]:
     """Plot the Expected Improvement acquisition landscape.
 
+    Draws a problem with one input dimension, like ``_plot_gp``.
+
     Parameters
     ----------
     candidates : torch.Tensor of shape (m,)
-        The candidate input points that were scored.
+        The single coordinate of each candidate point that was scored.
     ei_scores : torch.Tensor of shape (m,)
         The EI score for each candidate point.
     next_point : float or None, optional
@@ -308,13 +339,19 @@ def _plot_iteration_snapshot(
     """
     gp_ax, ei_ax = axes
 
+    # This figure draws a one-dimensional problem, so every input point has
+    # a single coordinate, which becomes the x-axis.
+    candidates = _axis_values(snapshot["candidates"])
+    train_x = _axis_values(snapshot["train_x"])
+    next_point = float(np.atleast_1d(snapshot["next_point"])[0])
+
     _plot_gp(
-        candidates=snapshot["candidates"],
+        candidates=candidates,
         f_mean=snapshot["f_mean"],
         f_var=snapshot["f_var"],
-        train_x=snapshot["train_x"],
+        train_x=train_x,
         train_y=snapshot["train_y"],
-        next_point=snapshot["next_point"],
+        next_point=next_point,
         ax=gp_ax,
         show=False,
     )
@@ -323,7 +360,7 @@ def _plot_iteration_snapshot(
     # train_y, which is the same tensor current_best was taken from, so the
     # reported pair always belongs together.
     best_index = int(torch.argmin(snapshot["train_y"]))
-    best_x = snapshot["train_x"][best_index].item()
+    best_x = train_x[best_index].item()
 
     if "prediction_error" in snapshot:
         title = (
@@ -348,15 +385,16 @@ def _plot_iteration_snapshot(
     # not report them, so they are optional here too.
     if all(key in snapshot for key in HYPERPARAMETER_KEYS):
         title += "\n" + " | ".join(
-            f"{key}: {snapshot[key]:.4g}" for key in HYPERPARAMETER_KEYS
+            f"{key}: {format_values(snapshot[key], '.4g')}"
+            for key in HYPERPARAMETER_KEYS
         )
 
     gp_ax.set_title(title)
 
     _plot_acquisition(
-        candidates=snapshot["candidates"],
+        candidates=candidates,
         ei_scores=snapshot["ei_scores"],
-        next_point=snapshot["next_point"],
+        next_point=next_point,
         ax=ei_ax,
         show=False,
         ylim=ei_ylim,
@@ -423,8 +461,8 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
         for row, iteration in enumerate(iterations):
             group = f[f"iterations/iter_{int(iteration):03d}"]
             snapshot: dict = {"iteration": int(iteration)}
+            snapshot["next_point"] = _as_values(history["next_point"][row])
             for field in (
-                "next_point",
                 "new_y",
                 "current_best",
                 "max_ei",
@@ -435,7 +473,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
             # Recorded only when the surrogate reports them.
             for field in HYPERPARAMETER_KEYS:
                 if field in history:
-                    snapshot[field] = float(history[field][row])
+                    snapshot[field] = _as_values(history[field][row])
             for field in ("candidates", "f_mean", "f_var", "ei_scores"):
                 snapshot[field] = torch.from_numpy(group[field][:])
             snapshot["train_x"] = torch.from_numpy(group["train_x"][:])
@@ -446,7 +484,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
         if "converged_max_ei" in final.attrs:
             converged: dict = {
                 "iteration": int(final.attrs["n_iterations"]),
-                "next_point": float(final.attrs["converged_next_point"]),
+                "next_point": _as_values(final.attrs["converged_next_point"]),
                 "current_best": float(final["train_y"][:].min()),
                 "max_ei": float(final.attrs["converged_max_ei"]),
                 "train_x": torch.from_numpy(final["train_x"][:]),
@@ -456,7 +494,7 @@ def _load_iteration_snapshots(run_dir: Path | str) -> list[dict]:
                 converged[field] = torch.from_numpy(final[f"converged_{field}"][:])
             for field in HYPERPARAMETER_KEYS:
                 if f"fitted_{field}" in final.attrs:
-                    converged[field] = float(final.attrs[f"fitted_{field}"])
+                    converged[field] = _as_values(final.attrs[f"fitted_{field}"])
             snapshots.append(converged)
 
     return snapshots
@@ -507,10 +545,22 @@ def _draw_iteration_slider(
     ------
     RuntimeError
         If snapshots is empty.
+    ValueError
+        If the snapshots come from a run with more than one input dimension,
+        whose surrogate cannot be drawn as a curve over one axis.
     """
     if not snapshots:
         raise RuntimeError(
             "No snapshots available. Set store_snapshots=True before calling run()."
+        )
+
+    candidates = snapshots[0]["candidates"]
+    n_dims = candidates.shape[1] if candidates.ndim == 2 else 1
+    if n_dims > 1:
+        raise ValueError(
+            f"The iteration slider draws the surrogate as a curve over one "
+            f"input, but this run has {n_dims} input dimensions. Use "
+            f"plot_metrics() or load_metrics() to inspect it instead."
         )
 
     # One fixed EI range across every frame, so the shrinking EI maximum
@@ -597,6 +647,9 @@ def load_iterations(
         If run_dir does not contain a results.h5 file.
     RuntimeError
         If the run was executed without ``store_snapshots``.
+    ValueError
+        If the run has more than one input dimension; its surrogate cannot
+        be drawn as a curve. Use ``load_metrics`` for such runs.
     """
     snapshots = _load_iteration_snapshots(run_dir)
 
@@ -617,10 +670,10 @@ METRIC_FIELDS = ("current_best", "improvement", "max_ei", "prediction_error")
 def _draw_metrics(
     iteration: Sequence[float],
     series: dict[str, Sequence[float]],
-    best_x: float,
+    best_x: Sequence[float],
     best_y: float,
     stop_reason: str,
-    fitted_hyperparameters: dict[str, float] | None = None,
+    fitted_hyperparameters: dict[str, tuple[float, ...]] | None = None,
     show: bool = True,
     log_scale: bool = True,
 ) -> tuple[Figure, np.ndarray]:
@@ -644,8 +697,11 @@ def _draw_metrics(
     series : dict
         The per-iteration values, keyed by the names in METRIC_FIELDS.
         All entries must be the same length as iteration.
-    best_x, best_y : float
-        The run's outcome, reported in the figure title.
+    best_x : sequence of float
+        The input point with the lowest output, one value per input
+        dimension, reported in the figure title.
+    best_y : float
+        The lowest output, reported in the figure title.
     stop_reason : str
         Which convergence criterion fired, reported in the figure title.
     fitted_hyperparameters : dict or None, optional
@@ -680,12 +736,13 @@ def _draw_metrics(
     # figures report the run's outcome identically whether it comes from
     # memory or from results.h5.
     title = (
-        f"Validation metrics | best_x: {best_x:.4f} | "
+        f"Validation metrics | best_x: {format_values(best_x)} | "
         f"best_y: {best_y:.4f} | stop: {stop_reason}"
     )
     if fitted_hyperparameters:
         title += "\nfinal " + " | ".join(
-            f"{key}: {value:.4g}" for key, value in fitted_hyperparameters.items()
+            f"{key}: {format_values(value, '.4g')}"
+            for key, value in fitted_hyperparameters.items()
         )
     fig.suptitle(title)
     fig.tight_layout()
@@ -741,13 +798,13 @@ def load_metrics(
         history = f["history"]
         iteration = history["iteration"][:]
         series = {field: history[field][:] for field in METRIC_FIELDS}
-        best_x = f["final"].attrs["best_x"]
+        best_x = _as_values(f["final"].attrs["best_x"])
         best_y = f["final"].attrs["best_y"]
         stop_reason = f["final"].attrs["stop_reason"]
         # The hyperparameters the run finished with, written by
         # mrr.save_hdf5 when the surrogate reports them.
         fitted = {
-            key: float(f["final"].attrs[f"fitted_{key}"])
+            key: _as_values(f["final"].attrs[f"fitted_{key}"])
             for key in HYPERPARAMETER_KEYS
             if f"fitted_{key}" in f["final"].attrs
         }

@@ -105,13 +105,51 @@ class TestGPyTorchSurrogateFit:
         self,
         training_data: tuple[torch.Tensor, torch.Tensor],
     ) -> None:
-        """Test that fit() stores a reference to the original training data."""
+        """Test that fit() stores the training data, one row per input point."""
         train_x, train_y = training_data
         model = GPyTorchSurrogate()
         model.fit_and_train(train_x, train_y, training_iter=5)
 
-        assert torch.equal(model.train_x, train_x)
-        assert torch.equal(model.train_y, train_y)
+        assert model.train_x.shape == (train_x.shape[0], 1)
+        assert torch.equal(model.train_x[:, 0], train_x.double())
+        assert torch.equal(model.train_y, train_y.double())
+
+    def test_fit_accepts_several_input_dimensions(self) -> None:
+        """Test that input points with three coordinates can be fitted."""
+        generator = torch.Generator().manual_seed(SEED)
+        train_x = torch.rand(12, 3, generator=generator, dtype=torch.float64)
+        train_y = (train_x**2).sum(dim=1)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(train_x, train_y)
+
+        preds = model.predict(
+            torch.rand(7, 3, generator=generator, dtype=torch.float64)
+        )
+
+        assert model.train_x.shape == (12, 3)
+        assert preds["f_mean"].shape == (7,)
+        assert preds["f_var"].shape == (7,)
+
+    def test_predict_rejects_points_with_the_wrong_dimension(self) -> None:
+        """Test that predicting in 2D on a 3D fit fails clearly."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(5, 3, generator=generator), torch.rand(5, generator=generator)
+        )
+
+        with pytest.raises(ValueError, match="Expected 3 coordinates"):
+            model.predict(torch.rand(4, 2, generator=generator))
+
+    def test_repr_counts_points_not_coordinates(self) -> None:
+        """Test that n_points is the number of rows, not n * d."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(5, 3, generator=generator), torch.rand(5, generator=generator)
+        )
+
+        assert "n_points=5" in repr(model)
 
     def test_fit_raises_on_shape_mismatch(self) -> None:
         """Test that fit() raises ValueError when train_x and train_y have different shapes."""
@@ -246,9 +284,9 @@ class TestGPyTorchSurrogateHyperparameters:
 
         hyperparameters = model.hyperparameters()
 
-        assert hyperparameters["lengthscale"] == pytest.approx(2.5, rel=1e-4)
-        assert hyperparameters["outputscale"] == pytest.approx(3.5, rel=1e-4)
-        assert hyperparameters["noise"] == pytest.approx(1e-3, rel=1e-4)
+        assert hyperparameters["lengthscale"] == pytest.approx((2.5,), rel=1e-4)
+        assert hyperparameters["outputscale"] == pytest.approx((3.5,), rel=1e-4)
+        assert hyperparameters["noise"] == pytest.approx((1e-3,), rel=1e-4)
 
     def test_reports_the_values_adam_tuned_to(
         self,
@@ -268,9 +306,50 @@ class TestGPyTorchSurrogateHyperparameters:
         hyperparameters = model.hyperparameters()
 
         assert set(hyperparameters) == {"lengthscale", "outputscale", "noise"}
-        assert all(isinstance(v, float) for v in hyperparameters.values())
+        assert all(isinstance(v, tuple) for v in hyperparameters.values())
+        assert all(isinstance(x, float) for v in hyperparameters.values() for x in v)
         # Adam moves the kernel away from GPyTorch's default starting point.
-        assert hyperparameters["lengthscale"] != pytest.approx(1.0, rel=1e-3)
+        assert hyperparameters["lengthscale"] != pytest.approx((1.0,), rel=1e-3)
+
+    def test_lengthscale_has_one_value_per_input_dimension(self) -> None:
+        """Test that a 3D fit reports three lengthscales, others one value."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(6, 3, generator=generator),
+            torch.rand(6, generator=generator),
+            lengthscale=[0.5, 1.0, 2.0],
+        )
+
+        hyperparameters = model.hyperparameters()
+
+        assert hyperparameters["lengthscale"] == pytest.approx((0.5, 1.0, 2.0))
+        assert len(hyperparameters["outputscale"]) == 1
+        assert len(hyperparameters["noise"]) == 1
+
+    def test_single_lengthscale_is_used_for_every_dimension(self) -> None:
+        """Test that a scalar lengthscale is shared across all dimensions."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+        model.fit_no_training(
+            torch.rand(6, 3, generator=generator),
+            torch.rand(6, generator=generator),
+            lengthscale=1.5,
+        )
+
+        assert model.hyperparameters()["lengthscale"] == pytest.approx((1.5,) * 3)
+
+    def test_lengthscale_count_must_match_the_dimensions(self) -> None:
+        """Test that two lengthscales for a 3D fit is rejected."""
+        generator = torch.Generator().manual_seed(SEED)
+        model = GPyTorchSurrogate()
+
+        with pytest.raises(ValueError, match="one value per input dimension"):
+            model.fit_no_training(
+                torch.rand(6, 3, generator=generator),
+                torch.rand(6, generator=generator),
+                lengthscale=[1.0, 2.0],
+            )
 
 
 class TestGPyTorchSurrogatePredict:
@@ -283,6 +362,19 @@ class TestGPyTorchSurrogatePredict:
 
         with pytest.raises(RuntimeError, match="fitted"):
             model.predict(test_x)
+
+    def test_predict_omits_the_dense_covariance(
+        self,
+        fitted_model: GPyTorchSurrogate,
+    ) -> None:
+        """Test that predict() does not build the (m, m) covariance eagerly.
+
+        It grows with the square of the candidate count and nothing in the
+        optimisation loop reads it; at 32768 candidates it took minutes.
+        """
+        preds = fitted_model.predict(torch.linspace(0, 1, 10))
+
+        assert "f_covar" not in preds
 
     def test_predict_returns_expected_keys(
         self,
@@ -297,7 +389,6 @@ class TestGPyTorchSurrogatePredict:
             "observed_pred",
             "f_mean",
             "f_var",
-            "f_covar",
         }
         assert set(preds.keys()) == expected_keys
 
@@ -323,7 +414,7 @@ class TestGPyTorchSurrogatePredict:
 
         assert preds["f_mean"].shape == (n_test,)
         assert preds["f_var"].shape == (n_test,)
-        assert preds["f_covar"].shape == (n_test, n_test)
+        assert preds["f_preds"].covariance_matrix.shape == (n_test, n_test)
         assert preds["f_samples"].shape == (n_samples, n_test)
 
     def test_predict_f_mean_is_finite(
@@ -350,11 +441,11 @@ class TestGPyTorchSurrogatePredict:
         self,
         fitted_model: GPyTorchSurrogate,
     ) -> None:
-        """Test scientific invariant: f_covar must be a symmetric matrix."""
+        """Test scientific invariant: the posterior covariance is symmetric."""
         test_x = torch.linspace(0, 1, 10)
-        preds = fitted_model.predict(test_x)
+        f_covar = fitted_model.predict(test_x)["f_preds"].covariance_matrix
 
-        assert torch.allclose(preds["f_covar"], preds["f_covar"].T, atol=1e-5)
+        assert torch.allclose(f_covar, f_covar.T, atol=1e-5)
 
     # Predicting at exactly the training inputs is the point of this test;
     # gpytorch's "did you forget model.train()?" heuristic is a false positive.
@@ -402,11 +493,11 @@ class TestGPyTorchSurrogatePredict:
         self,
         fitted_model: GPyTorchSurrogate,
     ) -> None:
-        """Test scientific invariant: f_covar eigenvalues must be non-negative."""
+        """Test scientific invariant: posterior covariance eigenvalues are >= 0."""
         test_x = torch.linspace(0, 1, 10)
-        preds = fitted_model.predict(test_x)
+        f_covar = fitted_model.predict(test_x)["f_preds"].covariance_matrix
 
-        eigenvalues = torch.linalg.eigvalsh(preds["f_covar"])
+        eigenvalues = torch.linalg.eigvalsh(f_covar)
         assert torch.all(
             eigenvalues >= -1e-5
         ), f"f_covar has negative eigenvalues: {eigenvalues[eigenvalues < -1e-5]}"
