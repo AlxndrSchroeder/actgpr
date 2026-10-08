@@ -127,10 +127,38 @@ The one rule to remember: **the number of `search_bounds` pairs is the number of
 | `initial_train_x=[-3.0, 5.0]` with one input | Accepted: a flat list is two 1D points |
 | `initial_train_x=[0.0, 1.0]` with two inputs | `ValueError`: pass one row per point, `[[0.0, 1.0]]` |
 | a point with 3 coordinates for a 2-input run | `ValueError`: expected 2 coordinates per point |
+| a starting point outside its `(lo, hi)` | `ValueError` naming the point and the input, since the Objective is never evaluated outside the bounds |
 | `lengthscale=2.0` (`without_training`) | Used for every input |
 | `lengthscale=[0.5, 3.0]` | One value per input; the count must match |
 
 With several inputs the candidates are drawn from a seeded Sobol sequence instead of an evenly spaced grid, since a grid of 500 points per input would be 125 million points in 3D. `n_candidates` is then the number of points spread across all inputs, so raise it for problems with many inputs, but not without limit: prediction cost grows faster than linearly with it (on a laptop about 0.04 s per stage at 2048 candidates and 4 s at 16384, and there are two stages per iteration), so a few thousand is a sensible ceiling.
+
+### How precise is it with several inputs?
+
+Less precise than with one, and it is worth knowing why before trusting a result.
+
+Each iteration picks its next point in two passes: a coarse pass over the whole space, then a zoom pass that re-searches a box around the coarse winner. The box width is set by the candidate spacing, and candidates thin out quickly as inputs are added. With 500 candidates:
+
+| inputs | candidates per axis | zoom box, as a share of each axis |
+|---|---|---|
+| 1 | 500 | 0.8% |
+| 2 | 22 | 18.7% |
+| 3 | 7.9 | **57.7%** |
+
+With one input the zoom is a real refinement. With three it still covers more than half of each axis, so it barely sharpens the coarse pass.
+
+Measured on the 3D test function in `run_test_3d.py` (`(x1-0.5)² + (x2+1)² + 0.2(x3-2)²`), with the defaults of 20 iterations and 500 candidates: `best_y` lands around `0.01` and `best_x` within about `0.1` of the true minimum. The 1D demo above, by contrast, lands within `5.5e-4`. So with several inputs, read a result as "the right region" rather than "the exact optimum".
+
+What helped, and what did not, on that function:
+
+| change | effect |
+|---|---|
+| more starting points plus a smaller `ei_threshold` (6 points, `1e-8`) | best: `best_y` to `0.0025` |
+| `n_candidates` from 500 to 8000 | some improvement, `best_y` to `0.0014` |
+| `n_candidates` from 500 to 2000 | no improvement |
+| `max_iterations` from 20 to 60 | no improvement; the run converged via `ei_threshold` at 29 evaluations either way |
+
+Those are measurements on one function, not a benchmark. The structural fix, optimising the acquisition function continuously instead of over candidates, is planned rather than done.
 
 ### Example output
 

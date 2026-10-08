@@ -218,6 +218,10 @@ before the Objective is ever called:
   two 1D points. Write ``[[0.0, 1.0]]``.
 - A starting point with the wrong number of coordinates raises a
   ``ValueError`` saying how many were expected.
+- A starting point outside its own ``(lo, hi)`` raises a ``ValueError``
+  naming the point and the input. The Objective is never evaluated outside
+  the search bounds, so a starting point outside them would be the one
+  exception.
 - ``without_training`` takes ``lengthscale`` as one value for all inputs,
   or as a list with one value per input, e.g. ``lengthscale=[0.5, 3.0]``.
   Inputs usually vary on different scales, which is why the GP keeps one
@@ -233,6 +237,54 @@ all inputs, so raise it for problems with many inputs, but not without
 limit: prediction cost grows faster than linearly with it (on a laptop
 about 0.04 s per stage at 2048 candidates and 4 s at 16384, with two stages
 per iteration), so a few thousand is a sensible ceiling.
+
+How precise is it with several inputs?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Less precise than with one input, and it is worth knowing why before
+trusting a result.
+
+Each iteration picks its next point in two passes: a coarse pass over the
+whole search space, then a zoom pass that re-searches a box around the
+coarse winner. The box width follows the candidate spacing, and candidates
+thin out quickly as inputs are added. With 500 candidates:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 30 50
+
+   * - Inputs
+     - Candidates per axis
+     - Zoom box, as a share of each axis
+   * - 1
+     - 500
+     - 0.8 %
+   * - 2
+     - 22
+     - 18.7 %
+   * - 3
+     - 7.9
+     - 57.7 %
+
+With one input the zoom pass is a real refinement, which is why the demo
+run above lands within ``5.5e-4`` of the true minimum. With three inputs
+the box still covers more than half of each axis, so it barely sharpens the
+coarse pass.
+
+Measured on the three-input function
+``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` with the defaults of 20
+iterations and 500 candidates, ``best_y`` lands around ``0.01`` and
+``best_x`` within about ``0.1`` of the true minimum. Read such a result as
+"the right region" rather than "the exact optimum".
+
+On that function, more starting points together with a smaller
+``ei_threshold`` helped most (six points and ``1e-8`` brought ``best_y`` to
+``0.0025``), and raising ``n_candidates`` from 500 to 8000 helped somewhat.
+Raising ``max_iterations`` alone did not help at all: the run converged via
+``ei_threshold`` after 29 evaluations either way. These are measurements on
+one function rather than a benchmark. The structural fix, optimising the
+acquisition function continuously instead of over candidates, is planned
+rather than done.
 
 Step 3: execute and interpret
 ------------------------------

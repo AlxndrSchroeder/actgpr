@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `history/next_point` and `history/lengthscale` have one column per
   input, and `final/best_x` and `meta.json`'s `best_x` hold one value per
   input
+- `OptimisationRun` rejects an `initial_train_x` point that lies outside
+  its search bounds, naming the point and the input. The Objective is never
+  evaluated outside the bounds, so a starting point outside them was the
+  one exception, and it was evaluated before anything checked it. Easy to
+  hit with several inputs, whose intervals differ. The bounds stay closed,
+  so starting on an endpoint is still allowed
 - `results.h5` gains `history/point_and_output`: the evaluated input point
   and its output in one array (columns `x1..xd`, `y`), one row per
   iteration, so a viewer such as H5Web can draw the whole run as a single
@@ -84,6 +90,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README and tutorial now state how precise a multi-input run is, and
+  why. The zoom-refinement box is 0.8% of each axis with one input but
+  57.7% with three, because candidates thin out as inputs are added, so a
+  three-input run lands around `0.1` from the optimum in input space where
+  a one-input run reaches `5.5e-4`. The docs record what helped on the test
+  function (more starting points with a smaller `ei_threshold`, and a much
+  larger `n_candidates`) and what did not (a larger `max_iterations`, since
+  the run converges via `ei_threshold` regardless)
 - The iteration slider (`plot_iterations`, `load_iterations`) is for
   problems with one input, since it draws the surrogate as a curve. For
   more inputs it raises a `ValueError` saying so, and the check sits where
