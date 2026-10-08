@@ -114,7 +114,7 @@ class OptimisationRun:
         n_candidates : int or None, optional
             Number of candidate points the acquisition function scores in
             each stage. If None (the default), 500 for a single input and
-            2000 for more, since the same count spread over several inputs
+            4000 for more, since the same count spread over several inputs
             thins out quickly. Raising it further mainly improves the worst
             case rather than the typical one.
         noise : float, optional
@@ -259,7 +259,7 @@ class OptimisationRun:
         n_candidates : int or None, optional
             Number of candidate points the acquisition function scores in
             each stage. If None (the default), 500 for a single input and
-            2000 for more, since the same count spread over several inputs
+            4000 for more, since the same count spread over several inputs
             thins out quickly. Raising it further mainly improves the worst
             case rather than the typical one.
         training_iter : int, optional
@@ -344,7 +344,7 @@ class OptimisationRun:
         n_candidates : int or None, optional
             Number of candidate points the acquisition function scores in
             each stage. If None (the default), 500 for a single input and
-            2000 for more, since the same count spread over several inputs
+            4000 for more, since the same count spread over several inputs
             thins out quickly. Raising it further mainly improves the worst
             case rather than the typical one.
         lengthscale : float or sequence of float, optional

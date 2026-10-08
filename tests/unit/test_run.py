@@ -1343,7 +1343,7 @@ class TestMultiDimensionalRun:
         run.run()
 
         config = json.loads((run.run_dir / "config.json").read_text())
-        assert config["n_candidates"] == 2000
+        assert config["n_candidates"] == 4000
 
     def test_iteration_slider_refuses_a_2d_run(self) -> None:
         """Test that plot_iterations() says why it cannot draw this run."""

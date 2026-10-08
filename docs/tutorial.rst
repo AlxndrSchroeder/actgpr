@@ -264,15 +264,15 @@ quickly as inputs are added. With the default candidate count:
      - 0.8 %
      - not used
    * - 2
-     - 2000
-     - 44.7
-     - 9.1 %
-     - 0.84 %
+     - 4000
+     - 63.2
+     - 6.4 %
+     - 0.41 %
    * - 3
-     - 2000
-     - 12.6
-     - 34.5 %
-     - 11.9 %
+     - 4000
+     - 15.9
+     - 26.9 %
+     - 7.2 %
 
 This is why a run with more than one input refines twice while a single
 input refines once. In one dimension the first box is already 0.8 % of the
@@ -281,7 +281,7 @@ a converged run, which risks evaluating the same point twice. Pass
 ``refinement_stages`` to ``Acquisition`` to override the choice.
 
 ``n_candidates`` is the number scored per stage, and it defaults to 500 for
-a single input and 2000 for more. Measured on the three-input function
+a single input and 4000 for more. Measured on the three-input function
 ``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` over twelve seeds with 20
 iterations:
 
@@ -299,20 +299,21 @@ iterations:
      - 0.0379
      - 0.2146
      - 1.7 s
-   * - 2000 (default)
+   * - 2000
      - 0.0079
      - 0.0106
      - 0.0253
      - 2.2 s
-   * - 4000
+   * - 4000 (default)
      - 0.0037
      - 0.0072
      - 0.0242
      - 4.5 s
 
-The benefit of more candidates lies mostly in the bad runs: the worst result
-improves more than eightfold from 500 to 2000, while the typical run barely
-moves. The one-input demo earlier in this tutorial lands within ``5.5e-4``,
+More candidates help in two ways: the typical run improves and, more
+importantly, the bad runs nearly disappear, the worst result falling almost
+ninefold from 500 to 4000. Lower the value if each evaluation is cheap and
+the seconds matter more than the reliability. The one-input demo earlier in this tutorial lands within ``5.5e-4``,
 so with several inputs read a result as "the right region" rather than "the
 exact optimum".
 

@@ -69,7 +69,7 @@ class TestAcquisitionInit:
         axis with one input but only 7.9 with three.
         """
         assert Acquisition(fitted_surrogate, (-3.0, 4.0)).n_candidates == 500
-        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).n_candidates == 2000
+        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).n_candidates == 4000
 
     def test_explicit_candidate_count_overrides_the_default(
         self, fitted_surrogate_3d: GPyTorchSurrogate

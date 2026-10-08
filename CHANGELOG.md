@@ -68,15 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `history/next_point` and `history/lengthscale` have one column per
   input, and `final/best_x` and `meta.json`'s `best_x` hold one value per
   input
-- `n_candidates` now defaults to 500 for a single input and 2000 for more,
+- `n_candidates` now defaults to 500 for a single input and 4000 for more,
   and accepts None to mean "choose for me". The same count spread over
   several axes thins out quickly: 500 is 500 candidates per axis with one
   input but only 7.9 with three. Over twelve seeds on the three-input test
-  function the gain is mostly in the bad runs, with the worst `best_y`
-  improving from 0.2146 to 0.0253 while the median moved only from 0.0095
-  to 0.0079, for about half a second per run. 4000 is better again (median
-  0.0037) at roughly twice the runtime. A single input keeps 500, which is
-  already 500 per axis, so no 1D result changes
+  function, 4000 improved the median `best_y` from 0.0095 to 0.0037 and the
+  worst from 0.2146 to 0.0242, taking about 4.5 s per run against 1.7 s. A
+  single input keeps 500, which is already 500 per axis, so no 1D result
+  changes
 - The zoom refinement now runs twice for a run with more than one input
   and once for a single input (`Acquisition(refinement_stages=...)` to
   override). Candidates thin out as inputs are added, so with 500
