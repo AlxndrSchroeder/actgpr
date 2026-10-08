@@ -250,7 +250,7 @@ Each pair is the identical figure, so which one to reach for depends solely on w
 import matplotlib.pyplot as plt
 from actgpr.plotting import load_iterations, load_metrics
 
-run_dir = "results/2026-07-20_212046_training50iter_ei0.001_maxiter20_n0.0002"
+run_dir = "results/2026-07-20_212046_1d_training50iter_ei0.001_maxiter20_n0.0002"
 
 slider = load_iterations(run_dir, show=False)
 load_metrics(run_dir, show=False)
