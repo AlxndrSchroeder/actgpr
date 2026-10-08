@@ -14,6 +14,8 @@ import h5py
 import numpy as np
 import torch
 
+from actgpr.surrogate import HYPERPARAMETER_KEYS
+
 
 def create_run_dir(
     base_path: Path,
@@ -323,7 +325,7 @@ def save_hdf5(
         # collapsed to the final value. Each is shape (n_iterations, k), with
         # k the number of values: one per input dimension for lengthscale,
         # one for outputscale and noise.
-        for field in ("lengthscale", "outputscale", "noise"):
+        for field in HYPERPARAMETER_KEYS:
             if results and all(field in res for res in results):
                 dataset = history.create_dataset(
                     field,

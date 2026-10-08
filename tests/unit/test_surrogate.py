@@ -305,7 +305,12 @@ class TestGPyTorchSurrogateHyperparameters:
 
         hyperparameters = model.hyperparameters()
 
-        assert set(hyperparameters) == {"lengthscale", "outputscale", "noise"}
+        assert set(hyperparameters) == {
+            "lengthscale",
+            "outputscale",
+            "noise",
+            "mean_constant",
+        }
         assert all(isinstance(v, tuple) for v in hyperparameters.values())
         assert all(isinstance(x, float) for v in hyperparameters.values() for x in v)
         # Adam moves the kernel away from GPyTorch's default starting point.
@@ -350,6 +355,70 @@ class TestGPyTorchSurrogateHyperparameters:
                 torch.rand(6, generator=generator),
                 lengthscale=[1.0, 2.0],
             )
+
+
+class TestRebuildingAFittedSurrogate:
+    """Tests that a recorded fit can be rebuilt from its hyperparameters.
+
+    This is what lets results.h5 drop the per-iteration snapshot arrays:
+    any fit is reconstructible from its training data plus the four values
+    hyperparameters() reports.
+    """
+
+    def test_rebuilt_surrogate_reproduces_the_predictions(self) -> None:
+        """Test that refitting from the reported values matches the original."""
+        generator = torch.Generator().manual_seed(SEED)
+        train_x = torch.rand(12, 3, generator=generator, dtype=torch.float64) * 4 - 2
+        # An offset output, so a non-zero mean constant actually matters.
+        train_y = (train_x**2).sum(dim=1) + 5.0
+        test_x = torch.rand(7, 3, generator=generator, dtype=torch.float64) * 4 - 2
+
+        trained = GPyTorchSurrogate()
+        trained.fit_and_train(train_x, train_y, training_iter=50)
+        recorded = trained.hyperparameters()
+
+        rebuilt = GPyTorchSurrogate()
+        rebuilt.fit_no_training(
+            train_x,
+            train_y,
+            lengthscale=list(recorded["lengthscale"]),
+            outputscale=recorded["outputscale"][0],
+            noise=recorded["noise"][0],
+            mean_constant=recorded["mean_constant"][0],
+        )
+
+        expected = trained.predict(test_x)["f_mean"]
+        assert torch.allclose(rebuilt.predict(test_x)["f_mean"], expected, atol=1e-8)
+
+    def test_the_mean_constant_is_what_makes_it_exact(self) -> None:
+        """Test that leaving the mean constant out visibly changes predictions.
+
+        Without it the rebuild is wrong, which is why it is recorded: Adam
+        tunes it in with_training and nothing else captures it.
+        """
+        generator = torch.Generator().manual_seed(SEED)
+        train_x = torch.rand(12, 3, generator=generator, dtype=torch.float64) * 4 - 2
+        train_y = (train_x**2).sum(dim=1) + 5.0
+        test_x = torch.rand(7, 3, generator=generator, dtype=torch.float64) * 4 - 2
+
+        trained = GPyTorchSurrogate()
+        trained.fit_and_train(train_x, train_y, training_iter=50)
+        recorded = trained.hyperparameters()
+
+        without_mean = GPyTorchSurrogate()
+        without_mean.fit_no_training(
+            train_x,
+            train_y,
+            lengthscale=list(recorded["lengthscale"]),
+            outputscale=recorded["outputscale"][0],
+            noise=recorded["noise"][0],
+        )
+
+        expected = trained.predict(test_x)["f_mean"]
+        assert recorded["mean_constant"][0] != pytest.approx(0.0, abs=1e-3)
+        assert not torch.allclose(
+            without_mean.predict(test_x)["f_mean"], expected, atol=1e-3
+        )
 
 
 class TestGPyTorchSurrogatePredict:

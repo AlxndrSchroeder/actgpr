@@ -21,9 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 from actgpr._points import format_values
-
-# Surrogate hyperparameters reported in the figure title, when available.
-HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise")
+from actgpr.surrogate import HYPERPARAMETER_KEYS
 
 
 def _as_values(stored: object) -> tuple[float, ...]:

@@ -11,6 +11,12 @@ from actgpr._points import as_points
 # keep the matrix numerically positive definite (float64 throughout).
 CHOLESKY_JITTER = 1e-4
 
+# The values hyperparameters() reports, in the order they are recorded and
+# rendered. Together with the training data they determine the fitted
+# surrogate completely. Named once so the MRR writer and the plots cannot
+# disagree about which values belong to a fit.
+HYPERPARAMETER_KEYS = ("lengthscale", "outputscale", "noise", "mean_constant")
+
 
 class ExactGPModel(gpytorch.models.ExactGP):
     """An exact Gaussian Process model with Constant mean and scaled RBF kernel.
@@ -175,6 +181,7 @@ class GPyTorchSurrogate:
         lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
+        mean_constant: float | None = None,
     ) -> None:
         """Fit the GP model with user-specified hyperparameters (no training).
 
@@ -192,6 +199,10 @@ class GPyTorchSurrogate:
             The RBF kernel lengthscale, by default 1.0. A single value is used
             for every input dimension; a sequence gives one value per input
             dimension, in order.
+        mean_constant : float or None, optional
+            The GP's constant mean. If None (the default) it stays at
+            GPyTorch's initial value of 0. Pass the ``mean_constant`` from a
+            recorded fit to rebuild that surrogate exactly.
         outputscale : float, optional
             The kernel outputscale (signal variance), by default 1.0.
         noise : float, optional
@@ -217,6 +228,10 @@ class GPyTorchSurrogate:
         self.model.covar_module.base_kernel.lengthscale = lengthscales
         self.model.covar_module.outputscale = outputscale
         self.likelihood.noise = noise
+        if mean_constant is not None:
+            # Set before any prediction: GPyTorch caches its prediction
+            # strategy on first use, so a later change would not take effect.
+            self.model.mean_module.raw_constant.data.fill_(mean_constant)
 
         # Freeze all parameters, no training
         for param in self.model.parameters():
@@ -225,7 +240,7 @@ class GPyTorchSurrogate:
             param.requires_grad = False
 
     def hyperparameters(self) -> dict[str, tuple[float, ...]]:
-        """Return the GP's current kernel and likelihood hyperparameters.
+        """Return the GP's current kernel, mean and likelihood hyperparameters.
 
         After ``fit_no_training`` these are the values that were passed in.
         After ``fit_and_train`` they are the values Adam arrived at, which
@@ -236,8 +251,18 @@ class GPyTorchSurrogate:
         -------
         dict[str, tuple of float]
             ``lengthscale`` with one value per input dimension, and
-            ``outputscale`` and ``noise`` with one value each. Every entry is
-            a tuple so that callers can record and render all three alike.
+            ``outputscale``, ``noise`` and ``mean_constant`` with one value
+            each. Every entry is a tuple so that callers can record and
+            render them alike.
+
+        Notes
+        -----
+        These four values, together with the training data, determine the
+        fitted surrogate completely: refitting with ``fit_no_training`` and
+        setting the mean constant reproduces its predictions to within
+        floating-point error. ``mean_constant`` is included for exactly that
+        reason, since ``with_training`` tunes it along with the rest and a
+        record without it cannot rebuild the surrogate.
 
         Raises
         ------
@@ -254,6 +279,7 @@ class GPyTorchSurrogate:
             "lengthscale": tuple(kernel.base_kernel.lengthscale.flatten().tolist()),
             "outputscale": (float(kernel.outputscale.item()),),
             "noise": (float(self.likelihood.noise.item()),),
+            "mean_constant": (float(self.model.mean_module.raw_constant.item()),),
         }
 
     def predict(
