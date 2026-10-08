@@ -66,7 +66,6 @@ class OptimisationRun:
         ei_threshold: float,
         n_candidates: int | None = None,
         noise: float = 1e-4,
-        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
         *,
         _train_hyperparameters: bool = True,
@@ -115,13 +114,6 @@ class OptimisationRun:
             case rather than the typical one.
         noise : float, optional
             Observation noise variance for the GP likelihood, by default 1e-4.
-        store_snapshots : bool, optional
-            If True, each iteration also stores a snapshot of the GP
-            predictions and EI scores for later interactive plotting via
-            plot_iterations(), by default True. Pass False to skip them (they
-            are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.load_metrics() is
-            recorded either way, regardless of this flag.
 
         Raises
         ------
@@ -160,7 +152,6 @@ class OptimisationRun:
         self.objective = objective
         self.surrogate = surrogate
         self.noise = noise
-        self.store_snapshots = store_snapshots
         self.max_iterations = max_iterations
         self.ei_threshold = ei_threshold
         self._run_dir = Path(run_dir) if run_dir is not None else None
@@ -187,10 +178,10 @@ class OptimisationRun:
         # Deferred-write accumulator for per-iteration data
         self._results: list[dict] = []
 
-        # GP/EI state of the fit that triggers ei_threshold convergence, if
-        # any. That fit's next_point is scored but never evaluated, so it
-        # has no place in _results/history, so this is its only record. Set
-        # in _run_loop(), only when store_snapshots is True.
+        # The EI value and point of the fit that triggers ei_threshold
+        # convergence, if any. That fit's next_point is scored but never
+        # evaluated, so it has no place in _results/history, so this is its
+        # only record. Set in _run_loop().
         self._convergence_snapshot: dict | None = None
 
         # The convergence criterion that ended the run, for plot_metrics.
@@ -213,7 +204,6 @@ class OptimisationRun:
         n_candidates: int | None = None,
         training_iter: int = 50,
         noise: float = 1e-4,
-        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun that optimises GP hyperparameters.
@@ -258,12 +248,6 @@ class OptimisationRun:
         noise : float, optional
             Initial observation noise variance for the GP likelihood,
             by default 1e-4.
-        store_snapshots : bool, optional
-            If True, also stores GP snapshots for interactive plotting via
-            plot_iterations(), by default True. Pass False to skip them (they
-            are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.load_metrics() is
-            recorded either way, regardless of this flag.
 
         Returns
         -------
@@ -279,7 +263,6 @@ class OptimisationRun:
             ei_threshold=ei_threshold,
             n_candidates=n_candidates,
             noise=noise,
-            store_snapshots=store_snapshots,
             run_dir=run_dir,
             _train_hyperparameters=True,
             _training_iter=training_iter,
@@ -298,7 +281,6 @@ class OptimisationRun:
         lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
-        store_snapshots: bool = True,
         run_dir: Path | str | None = None,
     ) -> OptimisationRun:
         """Construct an OptimisationRun with fixed GP hyperparameters.
@@ -345,12 +327,6 @@ class OptimisationRun:
             The kernel outputscale (signal variance), by default 1.0.
         noise : float, optional
             The observation noise variance, by default 1e-4.
-        store_snapshots : bool, optional
-            If True, also stores GP snapshots for interactive plotting via
-            plot_iterations(), by default True. Pass False to skip them (they
-            are the bulk of results.h5's size). The prediction_error and
-            improvement history used by plotting.load_metrics() is
-            recorded either way, regardless of this flag.
 
         Returns
         -------
@@ -366,7 +342,6 @@ class OptimisationRun:
             ei_threshold=ei_threshold,
             n_candidates=n_candidates,
             noise=noise,
-            store_snapshots=store_snapshots,
             run_dir=run_dir,
             _train_hyperparameters=False,
             _lengthscale=lengthscale,
@@ -422,7 +397,6 @@ class OptimisationRun:
             "outputscale": (
                 self._outputscale if not self._train_hyperparameters else None
             ),
-            "store_snapshots": self.store_snapshots,
         }
 
     def _raise_for_points_outside_bounds(self) -> None:
@@ -486,7 +460,6 @@ class OptimisationRun:
             actual_run_dir,
             results=self._results,
             config=self._config_dict(),
-            store_snapshots=self.store_snapshots,
             final_train_x=self.train_x,
             final_train_y=self.train_y,
             best_x=best_x,
@@ -669,28 +642,15 @@ class OptimisationRun:
                     f"(max EI {max_ei:.6f} < ei_threshold {self.ei_threshold})"
                 )
                 stop_reason = "ei_threshold"
-                if self.store_snapshots:
-                    # This fit's next_point is never evaluated, so it has
-                    # no place among the normal per-iteration snapshots, so
-                    # record it separately (see docstring of run.py's
-                    # convergence_snapshot in mrr.save_hdf5).
-                    self._convergence_snapshot = {
-                        "iteration": n_iterations,
-                        "next_point": next_point,
-                        "current_best": current_best,
-                        "max_ei": max_ei,
-                        "candidates": self._acq.candidates.clone(),
-                        "f_mean": self._acq.f_mean.clone(),
-                        "f_var": self._acq.f_var.clone(),
-                        "ei_scores": self._acq.ei_scores.clone(),
-                        "train_x": self.train_x.clone(),
-                        "train_y": self.train_y.clone(),
-                    }
-                    # Carry the hyperparameters too, so the converged frame
-                    # reports the same fields as every other iteration.
-                    converged_hyperparameters = self._fitted_hyperparameters()
-                    if converged_hyperparameters is not None:
-                        self._convergence_snapshot.update(converged_hyperparameters)
+                # This fit's next_point is never evaluated, so it has no
+                # place in the per-iteration history. Its surrogate is
+                # reconstructible from the training data and the recorded
+                # hyperparameters, so only these two values are kept.
+                self._convergence_snapshot = {
+                    "iteration": n_iterations,
+                    "next_point": next_point,
+                    "max_ei": max_ei,
+                }
                 break
 
             # 4. Evaluate objective at the next point
@@ -737,21 +697,9 @@ class OptimisationRun:
             if hyperparameters is not None:
                 iteration_data.update(hyperparameters)
 
-            if self.store_snapshots:
-                iteration_data.update(
-                    {
-                        "candidates": self._acq.candidates.clone(),
-                        "f_mean": self._acq.f_mean.clone(),
-                        "f_var": self._acq.f_var.clone(),
-                        "ei_scores": self._acq.ei_scores.clone(),
-                        "train_x": self.train_x.clone(),
-                        "train_y": self.train_y.clone(),
-                    }
-                )
-
             self._results.append(iteration_data)
 
-            # 7. Append to training data (after snapshot)
+            # 7. Append to training data
             self.train_x = torch.cat(
                 [self.train_x, torch.tensor([next_point], dtype=self.train_x.dtype)]
             )

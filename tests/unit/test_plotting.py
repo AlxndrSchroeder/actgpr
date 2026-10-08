@@ -35,7 +35,6 @@ class TestPlotRunHistory:
             tmp_path,
             results=results,
             config={"noise": 1e-4},
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 1.0]),
             final_train_y=torch.tensor([1.0, 0.5]),
             best_x=1.0,
@@ -143,7 +142,6 @@ class TestPlotRunHistory:
                 }
             ],
             config={"noise": 1e-4},
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 1.0]),
             final_train_y=torch.tensor([1.0, 0.5]),
             best_x=1.0,

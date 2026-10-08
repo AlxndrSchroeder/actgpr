@@ -47,7 +47,6 @@ def make_quadratic_run(run_dir: Path | None) -> OptimisationRun:
         lengthscale=1.0,
         outputscale=1.0,
         noise=1e-4,
-        store_snapshots=True,
         run_dir=run_dir,
     )
 
@@ -160,21 +159,6 @@ class TestMrrArtifacts:
             assert f["final"].attrs["best_x"] == pytest.approx(result["best_x"])
             assert f["final"].attrs["n_iterations"] == result["n_iterations"]
             assert len(f["final/train_x"]) == result["train_x"].numel()
-
-    def test_snapshots_written_per_iteration(self, run_dir: tuple[Path, dict]) -> None:
-        """Test that iterations/iter_NNN snapshot groups hold the GP arrays."""
-        directory, _ = run_dir
-
-        with h5py.File(directory / "results.h5", "r") as f:
-            n_recorded = len(f["history/iteration"])
-            assert len(f["iterations"]) == n_recorded
-
-            first = f["iterations/iter_001"]
-            # Candidates are input points, one row each; the per-candidate
-            # predictions and scores are one value per candidate.
-            assert first["candidates"].shape == (200, 1)
-            for name in ("f_mean", "f_var", "ei_scores"):
-                assert first[name].shape == (200,)
 
 
 class TestMrrArtifactsOnCrash:
@@ -338,9 +322,38 @@ class TestThreeDimensionalRun:
             assert list(f["final"].attrs["best_x"]) == pytest.approx(
                 list(result["best_x"])
             )
-            first = f["iterations/iter_001"]
-            assert first["candidates"].shape == (256, 3)
-            assert first["f_mean"].shape == (256,)
+            assert "iterations" not in f
+
+    def test_surrogate_rebuilds_from_the_record(self, finished_3d) -> None:
+        """Test that any iteration's surrogate survives without stored arrays.
+
+        results.h5 no longer keeps the per-iteration GP arrays. It does not
+        need to: the training data up to that iteration plus that row's
+        hyperparameters, the mean constant included, reproduce the fit.
+        """
+        from actgpr.surrogate import GPyTorchSurrogate
+
+        run, result = finished_3d
+        iteration = 3
+        n_initial = 3
+
+        with h5py.File(run.run_dir / "results.h5", "r") as f:
+            assert "iterations" not in f  # the arrays really are gone
+            points = n_initial + iteration - 1
+            rebuilt = GPyTorchSurrogate()
+            rebuilt.fit_no_training(
+                torch.from_numpy(f["final/train_x"][:points]),
+                torch.from_numpy(f["final/train_y"][:points]),
+                lengthscale=f["history/lengthscale"][iteration - 1].tolist(),
+                outputscale=float(f["history/outputscale"][iteration - 1][0]),
+                noise=float(f["history/noise"][iteration - 1][0]),
+                mean_constant=float(f["history/mean_constant"][iteration - 1][0]),
+            )
+
+        predicted = rebuilt.predict(torch.zeros(1, 3, dtype=torch.float64))["f_mean"]
+
+        assert rebuilt.train_x.shape == (points, 3)
+        assert torch.all(torch.isfinite(predicted))
 
     def test_metrics_figure_rebuilds_from_the_record(self, finished_3d) -> None:
         """Test that load_metrics works on a 3D run directory."""

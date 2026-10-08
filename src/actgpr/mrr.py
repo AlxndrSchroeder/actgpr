@@ -184,7 +184,6 @@ def save_hdf5(
     run_dir: Path,
     results: list[dict[str, object]],
     config: dict[str, object],
-    store_snapshots: bool,
     final_train_x: torch.Tensor,
     final_train_y: torch.Tensor,
     best_x: Sequence[float],
@@ -214,24 +213,19 @@ def save_hdf5(
         scaled to [0, 1] (see its own attributes).
         This is the single authoritative record of the run's history.
         Covers only *evaluated* iterations. See ``convergence_snapshot``
-        below for the one fit that never reached evaluation.
-    ``iterations/iter_NNN/``
-        Written only when ``store_snapshots`` is True: the GP snapshot arrays
-        ``candidates``, ``f_mean``, ``f_var``, ``ei_scores``, ``train_x``,
-        ``train_y`` for that iteration. Input points (``candidates``,
-        ``train_x``) have one row per point and one column per input
-        dimension.
+        below for the one fit that never reached evaluation. Any iteration's
+        surrogate can be rebuilt from the training data up to that point
+        plus that row's hyperparameters, so the fitted arrays themselves are
+        not stored.
     ``final/``
         Attributes ``best_x`` (one value per input dimension), ``best_y``,
         ``stop_reason``, ``n_iterations``
         and the final ``train_x``/``train_y`` datasets. When ``stop_reason``
         is ``"ei_threshold"`` and ``convergence_snapshot`` is given, also
-        holds the GP/EI state of the fit that triggered convergence,
-        attributes ``converged_max_ei``/``converged_next_point`` and
-        datasets ``converged_candidates``/``converged_f_mean``/
-        ``converged_f_var``/``converged_ei_scores``. That fit's candidate
-        was never evaluated, so it has no place in ``history/`` or
-        ``iterations/``, so this is the only place it is recorded.
+        holds ``converged_max_ei`` and ``converged_next_point``, the EI
+        value that fell below the threshold and the point it pointed at.
+        That fit's candidate was never evaluated, so it has no place in
+        ``history/``, so this is the only place it is recorded.
         When ``fitted_hyperparameters`` is given, also holds
         ``fitted_lengthscale``/``fitted_outputscale``/``fitted_noise``,
         the surrogate's hyperparameters as the run left them.
@@ -239,9 +233,10 @@ def save_hdf5(
     Parameters
     ----------
     convergence_snapshot : dict or None, optional
-        The GP/EI snapshot of the fit that triggered ei_threshold
-        convergence (``OptimisationRun._convergence_snapshot``), or None if
-        the run stopped via max_iterations or store_snapshots was False.
+        The ``max_ei`` and ``next_point`` of the fit that triggered
+        ei_threshold convergence, or None if the run stopped for another
+        reason. The surrogate behind it is reconstructible from the training
+        data and the recorded hyperparameters, so no arrays are stored.
     fitted_hyperparameters : dict or None, optional
         The surrogate's final hyperparameters, as returned by its
         ``hyperparameters()`` method. None when the surrogate does not
@@ -336,18 +331,6 @@ def save_hdf5(
                     "input dimension."
                 )
 
-        # Snapshot arrays, only when captured, one group per iteration.
-        if store_snapshots:
-            iter_group = f.create_group("iterations")
-            for res in results:
-                grp = iter_group.create_group(f"iter_{res['iteration']:03d}")
-                grp.create_dataset("candidates", data=res["candidates"].numpy())
-                grp.create_dataset("f_mean", data=res["f_mean"].numpy())
-                grp.create_dataset("f_var", data=res["f_var"].numpy())
-                grp.create_dataset("ei_scores", data=res["ei_scores"].numpy())
-                grp.create_dataset("train_x", data=res["train_x"].numpy())
-                grp.create_dataset("train_y", data=res["train_y"].numpy())
-
         # Final: run summary and final state.
         final_group = f.create_group("final")
         final_group.attrs["best_x"] = np.asarray(best_x, dtype=np.float64)
@@ -374,10 +357,6 @@ def save_hdf5(
             final_group.attrs["converged_next_point"] = np.asarray(
                 convergence_snapshot["next_point"], dtype=np.float64
             )
-            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
-                final_group.create_dataset(
-                    f"converged_{field}", data=convergence_snapshot[field].numpy()
-                )
 
 
 def setup_file_logger(run_dir: Path) -> logging.FileHandler:

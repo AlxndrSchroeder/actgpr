@@ -186,7 +186,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config=config,
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=(0.5,),
@@ -213,7 +212,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config=config,
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=(0.5,),
@@ -245,39 +243,6 @@ class TestSaveHdf5:
             # Scalars are no longer duplicated as iter_NNN attributes.
             assert "iterations" not in f
 
-    def test_tensor_datasets_only_with_snapshots(self, tmp_path: Path, dummy_data):
-        config, results = dummy_data
-
-        # Add tensors to results
-        results[0].update(
-            {
-                "candidates": torch.tensor([0.1, 0.2]),
-                "f_mean": torch.tensor([0.1, 0.2]),
-                "f_var": torch.tensor([0.1, 0.2]),
-                "ei_scores": torch.tensor([0.1, 0.2]),
-                "train_x": torch.tensor([0.0]),
-                "train_y": torch.tensor([1.0]),
-            }
-        )
-
-        mrr.save_hdf5(
-            tmp_path,
-            results=results,
-            config=config,
-            store_snapshots=True,
-            final_train_x=torch.tensor([0.0, 0.5]),
-            final_train_y=torch.tensor([1.0, 0.2]),
-            best_x=(0.5,),
-            best_y=0.2,
-            stop_reason="max_iterations",
-            n_iterations=1,
-        )
-
-        with h5py.File(tmp_path / "results.h5", "r") as f:
-            grp = f["iterations/iter_001"]
-            assert "candidates" in grp
-            assert "f_mean" in grp
-
     def test_convergence_snapshot_written_under_final(self, tmp_path: Path, dummy_data):
         config, results = dummy_data
         convergence_snapshot = {
@@ -292,7 +257,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config=config,
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=(0.5,),
@@ -306,8 +270,9 @@ class TestSaveHdf5:
             final = f["final"]
             assert final.attrs["converged_max_ei"] == pytest.approx(0.0009)
             assert final.attrs["converged_next_point"] == pytest.approx(0.3)
-            for field in ("candidates", "f_mean", "f_var", "ei_scores"):
-                assert f"converged_{field}" in final
+            # The surrogate behind that fit is rebuildable from the training
+            # data and the recorded hyperparameters, so no arrays are kept.
+            assert not any(name.startswith("converged_") for name in final)
 
     def test_lengthscale_history_has_one_column_per_input_dimension(
         self, tmp_path: Path
@@ -332,7 +297,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config={"noise": 1e-4},
-            store_snapshots=False,
             final_train_x=torch.zeros(3, 3),
             final_train_y=torch.zeros(3),
             best_x=(0.5,),
@@ -372,7 +336,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config={"n_dims": n_dims},
-            store_snapshots=False,
             final_train_x=torch.zeros(2, n_dims),
             final_train_y=torch.zeros(2),
             best_x=tuple([0.0] * n_dims),
@@ -462,7 +425,6 @@ class TestSaveHdf5:
             tmp_path,
             results=results,
             config=config,
-            store_snapshots=False,
             final_train_x=torch.tensor([0.0, 0.5]),
             final_train_y=torch.tensor([1.0, 0.2]),
             best_x=(0.5,),
@@ -474,7 +436,7 @@ class TestSaveHdf5:
         with h5py.File(tmp_path / "results.h5", "r") as f:
             final = f["final"]
             assert "converged_max_ei" not in final.attrs
-            assert "converged_candidates" not in final
+            assert "converged_next_point" not in final.attrs
 
 
 class TestSetupFileLogger:

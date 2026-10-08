@@ -562,56 +562,6 @@ class TestOptimisationRunRun:
         result = run.run()
         assert result["stop_reason"] == "ei_threshold"
 
-    def test_convergence_snapshot_populated_with_store_snapshots(self) -> None:
-        """Test that the converging fit's GP/EI state is captured.
-
-        Regression test for the bug where the fit that triggers
-        ei_threshold convergence was computed but never recorded anywhere,
-        making the last visible snapshot look like it stopped one
-        iteration early with EI still above threshold.
-        """
-        run = OptimisationRun.with_training(
-            objective=ObjectiveFn(),
-            surrogate=GPyTorchSurrogate(),
-            search_bounds=(-3.0, 3.0),
-            initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
-            max_iterations=50,
-            ei_threshold=1.0,  # very high — should stop immediately
-            n_candidates=50,
-            training_iter=10,
-            store_snapshots=True,
-        )
-        result = run.run()
-
-        assert result["stop_reason"] == "ei_threshold"
-        assert run._convergence_snapshot is not None
-        snapshot = run._convergence_snapshot
-        assert snapshot["max_ei"] < run.ei_threshold
-        for key in ("candidates", "f_mean", "f_var", "ei_scores", "train_x", "train_y"):
-            assert key in snapshot
-        # The converging fit was never evaluated, so it must not carry
-        # evaluation-only fields.
-        assert "prediction_error" not in snapshot
-        assert "improvement" not in snapshot
-
-    def test_convergence_snapshot_absent_without_store_snapshots(self) -> None:
-        """Test that no convergence snapshot is captured when store_snapshots=False."""
-        run = OptimisationRun.with_training(
-            objective=ObjectiveFn(),
-            surrogate=GPyTorchSurrogate(),
-            search_bounds=(-3.0, 3.0),
-            initial_train_x=torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0]),
-            max_iterations=50,
-            ei_threshold=1.0,
-            n_candidates=50,
-            training_iter=10,
-            store_snapshots=False,
-        )
-        result = run.run()
-
-        assert result["stop_reason"] == "ei_threshold"
-        assert run._convergence_snapshot is None
-
     def test_convergence_snapshot_absent_when_max_iterations_stops(self) -> None:
         """Test that no convergence snapshot is captured for a max_iterations stop."""
         run = OptimisationRun.with_training(
@@ -623,7 +573,6 @@ class TestOptimisationRunRun:
             ei_threshold=1e-20,  # impossibly low — forces max_iterations stop
             n_candidates=50,
             training_iter=10,
-            store_snapshots=True,
         )
         result = run.run()
 
@@ -857,96 +806,6 @@ class TestFittedHyperparameters:
         result = run.run()
         # The minimum of (x-1)^2 is at x=1, y=0
         assert result["best_y"] < 1.0
-
-
-class TestOptimisationRunSnapshots:
-    """Tests for snapshot storage and plot_iterations."""
-
-    @pytest.fixture()
-    def snapshot_run(self) -> OptimisationRun:
-        """Return an OptimisationRun with store_snapshots=True."""
-        torch.manual_seed(SEED)
-        return OptimisationRun.with_training(
-            objective=ObjectiveFn(),
-            surrogate=GPyTorchSurrogate(),
-            search_bounds=(-3.0, 3.0),
-            initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
-            max_iterations=8,
-            ei_threshold=0.01,
-            n_candidates=50,
-            training_iter=10,
-            store_snapshots=True,
-        )
-
-    @pytest.fixture()
-    def no_snapshot_run(self) -> OptimisationRun:
-        """Return an OptimisationRun with store_snapshots explicitly disabled."""
-        torch.manual_seed(SEED)
-        return OptimisationRun.with_training(
-            objective=ObjectiveFn(),
-            surrogate=GPyTorchSurrogate(),
-            search_bounds=(-3.0, 3.0),
-            initial_train_x=torch.tensor([-2.0, -1.0, 1.0, 2.0]),
-            max_iterations=8,
-            ei_threshold=0.01,
-            n_candidates=50,
-            training_iter=10,
-            store_snapshots=False,
-        )
-
-    def test_snapshots_enabled_by_default(self, simple_run: OptimisationRun) -> None:
-        """Test that snapshots are kept without asking, so plot_iterations() works.
-
-        Opting out (store_snapshots=False) keeps results.h5 small; opting in
-        used to be required, which made the plotting entry point fail for
-        anyone who had not set the flag up front.
-        """
-        assert simple_run.store_snapshots is True
-
-        simple_run.run()
-
-        assert all("candidates" in entry for entry in simple_run._results)
-
-    def test_snapshots_stored_when_enabled(self, snapshot_run: OptimisationRun) -> None:
-        """Test that snapshots are present in _results when store_snapshots=True."""
-        snapshot_run.run()
-        snapshot_keys = {
-            "candidates",
-            "f_mean",
-            "f_var",
-            "ei_scores",
-            "train_x",
-            "train_y",
-        }
-        for entry in snapshot_run._results:
-            assert snapshot_keys.issubset(entry.keys())
-
-    def test_snapshots_absent_when_disabled(
-        self, no_snapshot_run: OptimisationRun
-    ) -> None:
-        """Test that no snapshot tensors are stored when store_snapshots=False."""
-        no_snapshot_run.run()
-        for entry in no_snapshot_run._results:
-            assert "candidates" not in entry
-
-    def test_snapshot_tensors_have_correct_shapes(
-        self, snapshot_run: OptimisationRun
-    ) -> None:
-        """Test that snapshot tensors have consistent shapes."""
-        snapshot_run.run()
-        for entry in snapshot_run._results:
-            n_candidates = entry["candidates"].numel()
-            assert entry["f_mean"].shape == (n_candidates,)
-            assert entry["f_var"].shape == (n_candidates,)
-            assert entry["ei_scores"].shape == (n_candidates,)
-            assert entry["train_x"].numel() == entry["train_y"].numel()
-
-    def test_snapshot_train_data_grows(self, snapshot_run: OptimisationRun) -> None:
-        """Test that snapshot train_x grows across iterations."""
-        snapshot_run.run()
-        results = snapshot_run._results
-        if len(results) >= 2:
-            assert results[1]["train_x"].numel() > results[0]["train_x"].numel()
 
 
 class TestOptimisationRunWithoutTraining:
