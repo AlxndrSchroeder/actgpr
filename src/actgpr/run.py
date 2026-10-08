@@ -126,9 +126,10 @@ class OptimisationRun:
         Raises
         ------
         ValueError
-            If initial_train_x is empty or its points do not have one
-            coordinate per search_bounds pair, max_iterations is not
-            positive, a search_bounds pair is not an increasing interval, or
+            If initial_train_x is empty, its points do not have one
+            coordinate per search_bounds pair, or one of them lies outside
+            its search bounds; if max_iterations is not positive; if a
+            search_bounds pair is not an increasing interval; or if
             ei_threshold is not positive.
         """
         # The number of (lo, hi) pairs is the number of input dimensions; it
@@ -143,6 +144,12 @@ class OptimisationRun:
 
         if self.train_x.shape[0] == 0:
             raise ValueError("initial_train_x must contain at least one point.")
+
+        # The Objective is never evaluated outside the search bounds, so a
+        # starting point outside them would be the one exception. Easy to
+        # hit with several inputs, whose intervals differ, so check the
+        # closed interval of every coordinate before anything runs.
+        self._raise_for_points_outside_bounds()
         if max_iterations <= 0:
             raise ValueError(
                 f"max_iterations ({max_iterations}) must be a positive integer."
@@ -415,6 +422,16 @@ class OptimisationRun:
             ),
             "store_snapshots": self.store_snapshots,
         }
+
+    def _raise_for_points_outside_bounds(self) -> None:
+        """Raise if any initial input point lies outside its search bounds."""
+        for row, point in enumerate(self.train_x.tolist()):
+            for dim, (value, (lo, hi)) in enumerate(zip(point, self.search_bounds)):
+                if not lo <= value <= hi:
+                    raise ValueError(
+                        f"initial_train_x point {row} has x{dim + 1}={value}, "
+                        f"outside its search bounds ({lo}, {hi})."
+                    )
 
     def _evaluate(self, point: list[float]) -> float:
         """Evaluate the Objective at one input point, given its coordinates."""

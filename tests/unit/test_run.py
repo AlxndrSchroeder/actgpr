@@ -90,6 +90,56 @@ class TestOptimisationRunInit:
                 ei_threshold=0.01,
             )
 
+    def test_raises_on_initial_point_outside_search_bounds(self) -> None:
+        """Test that a starting point outside the bounds is rejected.
+
+        The Objective is never evaluated outside the search bounds, so a
+        starting point outside them would be the one exception, and it would
+        otherwise be evaluated before anything checked it.
+        """
+        with pytest.raises(ValueError, match="outside its search bounds"):
+            OptimisationRun(
+                objective=ObjectiveFn(),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=(-3.0, 3.0),
+                initial_train_x=[-2.0, 4.0],
+                max_iterations=10,
+                ei_threshold=0.01,
+            )
+
+    def test_accepts_initial_points_on_the_bounds(self) -> None:
+        """Test that the search bounds are a closed interval.
+
+        Starting at the two endpoints is the documented convention for a
+        single input, so the limits themselves must be allowed.
+        """
+        run = OptimisationRun(
+            objective=ObjectiveFn(),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=(-3.0, 3.0),
+            initial_train_x=[-3.0, 3.0],
+            max_iterations=10,
+            ei_threshold=0.01,
+        )
+
+        assert run.train_x.shape == (2, 1)
+
+    def test_error_names_the_offending_point_and_input(self) -> None:
+        """Test that the message says which point and which input is wrong.
+
+        With several inputs the intervals differ, so the message has to
+        name the coordinate rather than just say a point is out of range.
+        """
+        with pytest.raises(ValueError, match=r"point 1 has x2=5.0"):
+            OptimisationRun(
+                objective=ObjectiveFn(),
+                surrogate=GPyTorchSurrogate(),
+                search_bounds=[(-3.0, 3.0), (0.0, 1.0)],
+                initial_train_x=[[0.0, 0.5], [1.0, 5.0]],
+                max_iterations=10,
+                ei_threshold=0.01,
+            )
+
     def test_raises_on_max_iterations_too_small(self) -> None:
         """Test that ValueError is raised when max_iterations <= 0."""
         with pytest.raises(ValueError, match="must be a positive integer"):
