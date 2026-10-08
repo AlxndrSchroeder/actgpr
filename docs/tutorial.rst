@@ -293,7 +293,7 @@ iterations:
      - Median ``best_y``
      - Mean
      - Worst
-     - Runtime
+     - Optimisation time
    * - 500
      - 0.0095
      - 0.0379
@@ -312,7 +312,8 @@ iterations:
 
 More candidates help in two ways: the typical run improves and, more
 importantly, the bad runs nearly disappear, the worst result falling almost
-ninefold from 500 to 4000. Lower the value if each evaluation is cheap and
+ninefold from 500 to 4000. The times above are the optimisation itself; a
+script costs about 1.6 s more, once, for importing torch. Lower the value if each evaluation is cheap and
 the seconds matter more than the reliability. The one-input demo earlier in this tutorial lands within ``5.5e-4``,
 so with several inputs read a result as "the right region" rather than "the
 exact optimum".

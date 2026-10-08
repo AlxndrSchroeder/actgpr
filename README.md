@@ -149,13 +149,13 @@ This is why runs with more than one input refine **twice** and a single input re
 
 Measured on the 3D test function in `run_test_3d.py` (`(x1-0.5)² + (x2+1)² + 0.2(x3-2)²`), with 20 iterations:
 
-| candidates | median `best_y` | mean | worst | runtime |
+| candidates | median `best_y` | mean | worst | optimisation time |
 |---|---|---|---|---|
 | 500 | 0.0095 | 0.0379 | 0.2146 | 1.7 s |
 | 2000 | 0.0079 | 0.0106 | 0.0253 | 2.2 s |
 | **4000 (default)** | **0.0037** | **0.0072** | **0.0242** | 4.5 s |
 
-Over twelve seeds. More candidates help in two ways: the typical run improves (median `best_y` 0.0095 to 0.0037) and, more importantly, the bad runs nearly disappear (worst 0.2146 to 0.0242, almost ninefold). That reliability is why the default for several inputs is 4000, at roughly 4.5 s per run on a laptop. Lower it if each of your evaluations is cheap and you would rather have the seconds back. For comparison, the 1D demo lands within `5.5e-4` of its true minimum.
+Over twelve seeds. More candidates help in two ways: the typical run improves (median `best_y` 0.0095 to 0.0037) and, more importantly, the bad runs nearly disappear (worst 0.2146 to 0.0242, almost ninefold). That reliability is why the default for several inputs is 4000, at roughly 4.5 s of optimisation on a laptop (a script costs about 1.6 s more, once, for importing torch). Lower it if each of your evaluations is cheap and you would rather have the seconds back. For comparison, the 1D demo lands within `5.5e-4` of its true minimum.
 
 So with several inputs, read a result as "the right region" rather than "the exact optimum". More starting points together with a smaller `ei_threshold` also helps (six points and `1e-8` reached `best_y` 0.0025). Raising `max_iterations` alone does not: the run converges via `ei_threshold` at around 29 evaluations either way.
 
