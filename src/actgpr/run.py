@@ -11,17 +11,15 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from matplotlib.figure import Figure
-from matplotlib.widgets import Slider
 
 from actgpr import mrr
 from actgpr._points import as_points, format_values, parse_search_bounds
 from actgpr.acquisition import Acquisition
 from actgpr.objective_fn import Objective
-from actgpr.plotting import METRIC_FIELDS, _draw_iteration_slider, _draw_metrics
+from actgpr.plotting import METRIC_FIELDS, _draw_metrics
 from actgpr.surrogate import GPyTorchSurrogate
 
 
@@ -52,8 +50,6 @@ class OptimisationRun:
         Construct an OptimisationRun with fixed GP hyperparameters.
     run()
         Execute the optimisation loop and return the results.
-    plot_iterations()
-        Open an interactive matplotlib slider to browse GP snapshots per iteration.
     plot_metrics()
         Plot this run's validation metrics against iteration.
     """
@@ -190,12 +186,6 @@ class OptimisationRun:
 
         # Deferred-write accumulator for per-iteration data
         self._results: list[dict] = []
-
-        # Holds the Slider from plot_iterations() for its lifetime. Matplotlib
-        # widgets stop responding if their only reference is garbage
-        # collected. See the docstring of plot_iterations() for why this
-        # must be an attribute, not a local variable.
-        self._active_slider: Slider | None = None
 
         # GP/EI state of the fit that triggers ei_threshold convergence, if
         # any. That fit's next_point is scored but never evaluated, so it
@@ -827,79 +817,6 @@ class OptimisationRun:
             show=show,
             log_scale=log_scale,
         )
-
-    def plot_iterations(self, show: bool = True, log_scale: bool = True) -> None:
-        """Open an interactive matplotlib figure to browse iterations.
-
-        Creates a figure with two subplots (GP predictions on top,
-        EI landscape on bottom) and a slider to scrub through iterations.
-
-        The from-the-run counterpart to ``plotting.load_iterations``, which
-        opens the identical figure for a run read back from its logs.
-
-        The Slider is kept alive via ``self._active_slider`` for as long as
-        the OptimisationRun exists. Matplotlib does not keep its own strong
-        reference to a Slider. If the only reference were a local variable
-        here, it would be garbage collected as soon as this method returns,
-        which happens immediately whenever ``plt.show()`` does not block
-        (backend- and environment-dependent). The slider would still be
-        drawn, but would silently stop responding to drags.
-
-        Parameters
-        ----------
-        show : bool, optional
-            Whether to call plt.show() immediately, by default True. Pass
-            False when opening this alongside another figure: plt.show()
-            displays *every* open figure, so calling it once per figure
-            re-displays the earlier ones. Build both, then call plt.show()
-            once yourself.
-        log_scale : bool, optional
-            If True, draws the EI subplot's y-axis on a log scale, with the
-            ei_threshold convergence criterion marked as a reference line.
-            EI often shrinks by orders of magnitude as a run converges,
-            which a linear axis compresses into an invisible flat line, so
-            log scale keeps that shrinkage visible, so it is the default.
-            Pass False for a linear EI axis.
-
-        Notes
-        -----
-        If the run converged via ei_threshold, the final frame is the fit
-        that triggered convergence. Its next_point was scored but never
-        evaluated, shown with a title noting "(converged, not evaluated)"
-        instead of the usual pred_error/improvement values.
-
-        Raises
-        ------
-        RuntimeError
-            If the run has not been executed yet, or if it was executed
-            with store_snapshots=False so no snapshots were recorded.
-        ValueError
-            If the run has more than one input dimension; its surrogate
-            cannot be drawn as a curve. Use ``plot_metrics()`` for such runs.
-        """
-        # Distinguished from the store_snapshots case below: both leave no
-        # snapshots to browse, but telling someone who has not called run()
-        # to re-run with store_snapshots=True sends them after the wrong
-        # cause. Mirrors plot_metrics.
-        if not self._results:
-            raise RuntimeError(
-                "No iterations available. Call run() before plot_iterations()."
-            )
-
-        snapshots = [r for r in self._results if "candidates" in r]
-        if self._convergence_snapshot is not None:
-            snapshots = snapshots + [self._convergence_snapshot]
-
-        # Always drawn with show=False so the slider is stored before any
-        # window opens: with a blocking backend plt.show() does not return
-        # until it is closed, and the reference must already be held by then.
-        slider = _draw_iteration_slider(
-            snapshots, self.ei_threshold, log_scale=log_scale, show=False
-        )
-        self._active_slider = slider
-
-        if show:
-            plt.show()
 
     def __repr__(self) -> str:
         """Return a concise human-readable summary of the OptimisationRun."""

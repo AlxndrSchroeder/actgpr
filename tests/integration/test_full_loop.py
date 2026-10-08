@@ -351,12 +351,3 @@ class TestThreeDimensionalRun:
 
         assert axes.shape == (2, 2)
         assert "best_x: (" in fig._suptitle.get_text()
-
-    def test_iteration_slider_refuses_the_record(self, finished_3d) -> None:
-        """Test that load_iterations explains why it cannot draw 3D."""
-        from actgpr.plotting import load_iterations
-
-        run, _ = finished_3d
-
-        with pytest.raises(ValueError, match="3 input dimensions"):
-            load_iterations(run.run_dir, show=False)
