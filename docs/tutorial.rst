@@ -247,28 +247,32 @@ trusting a result.
 Each iteration picks its next point in stages: a coarse pass over the whole
 search space, then a refinement pass that re-searches a box around the best
 point so far. The box follows the candidate spacing, and candidates thin out
-quickly as inputs are added. With 500 candidates:
+quickly as inputs are added. With the default candidate count:
 
 .. list-table::
    :header-rows: 1
-   :widths: 14 24 31 31
+   :widths: 12 22 16 25 25
 
    * - Inputs
-     - Candidates per axis
+     - Candidates (default)
+     - Per axis
      - Box after 1st refinement
      - After 2nd
    * - 1
      - 500
-     - 0.8 % of each axis
+     - 500
+     - 0.8 %
      - not used
    * - 2
-     - 22
-     - 18.7 %
-     - 3.5 %
+     - 2000
+     - 44.7
+     - 9.1 %
+     - 0.84 %
    * - 3
-     - 7.9
-     - 57.7 %
-     - 33.2 %
+     - 2000
+     - 12.6
+     - 34.5 %
+     - 11.9 %
 
 This is why a run with more than one input refines twice while a single
 input refines once. In one dimension the first box is already 0.8 % of the
@@ -276,19 +280,44 @@ axis, and a second pass would shrink it to the spacing between the points of
 a converged run, which risks evaluating the same point twice. Pass
 ``refinement_stages`` to ``Acquisition`` to override the choice.
 
-Measured on the three-input function
-``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` with 20 iterations, the default
-500 candidates reach ``best_y`` of about ``0.003``, roughly ``0.08`` from
-the true minimum, in under two seconds. Raising ``n_candidates`` to 8000
-reaches ``0.0014`` and ``0.04``, taking about sixteen seconds. The
-one-input demo earlier in this tutorial lands within ``5.5e-4``. So with
-several inputs, read a result as "the right region" rather than "the exact
-optimum".
+``n_candidates`` is the number scored per stage, and it defaults to 500 for
+a single input and 2000 for more. Measured on the three-input function
+``(x1 - 0.5)² + (x2 + 1)² + 0.2 (x3 - 2)²`` over twelve seeds with 20
+iterations:
 
-Raising ``n_candidates`` to a few thousand is the most effective single
-change, because what helps is more candidates *per axis*: 2000 was no better
-than 500. More starting points together with a smaller ``ei_threshold`` also
-helps. Raising ``max_iterations`` alone does not, since the run converges via
+.. list-table::
+   :header-rows: 1
+   :widths: 22 20 18 20 20
+
+   * - Candidates
+     - Median ``best_y``
+     - Mean
+     - Worst
+     - Runtime
+   * - 500
+     - 0.0095
+     - 0.0379
+     - 0.2146
+     - 1.7 s
+   * - 2000 (default)
+     - 0.0079
+     - 0.0106
+     - 0.0253
+     - 2.2 s
+   * - 4000
+     - 0.0037
+     - 0.0072
+     - 0.0242
+     - 4.5 s
+
+The benefit of more candidates lies mostly in the bad runs: the worst result
+improves more than eightfold from 500 to 2000, while the typical run barely
+moves. The one-input demo earlier in this tutorial lands within ``5.5e-4``,
+so with several inputs read a result as "the right region" rather than "the
+exact optimum".
+
+More starting points together with a smaller ``ei_threshold`` also helps.
+Raising ``max_iterations`` alone does not, since the run converges via
 ``ei_threshold`` at around 29 evaluations either way.
 
 No point is ever evaluated twice: across these runs no new point landed

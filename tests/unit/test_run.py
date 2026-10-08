@@ -1325,6 +1325,26 @@ class TestMultiDimensionalRun:
 
         assert torch.equal(one_run()["train_x"], one_run()["train_x"])
 
+    def test_config_records_the_resolved_candidate_count(self, tmp_path: Path) -> None:
+        """Test that config.json holds the count actually used, not None.
+
+        The default depends on the number of inputs, so the MRR record has
+        to state the resolved value for the run to be reproducible.
+        """
+        run = OptimisationRun.without_training(
+            objective=ObjectiveFn(_bowl_2d),
+            surrogate=GPyTorchSurrogate(),
+            search_bounds=[(-3.0, 3.0), (-3.0, 3.0)],
+            initial_train_x=[[-2.0, -2.0], [2.0, 2.0]],
+            max_iterations=1,
+            ei_threshold=1e-9,
+            run_dir=tmp_path,
+        )
+        run.run()
+
+        config = json.loads((run.run_dir / "config.json").read_text())
+        assert config["n_candidates"] == 2000
+
     def test_iteration_slider_refuses_a_2d_run(self) -> None:
         """Test that plot_iterations() says why it cannot draw this run."""
         run = OptimisationRun.without_training(

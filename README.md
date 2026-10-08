@@ -131,31 +131,33 @@ The one rule to remember: **the number of `search_bounds` pairs is the number of
 | `lengthscale=2.0` (`without_training`) | Used for every input |
 | `lengthscale=[0.5, 3.0]` | One value per input; the count must match |
 
-With several inputs the candidates are drawn from a seeded Sobol sequence instead of an evenly spaced grid, since a grid of 500 points per input would be 125 million points in 3D. `n_candidates` is then the number of points spread across all inputs, so raise it for problems with many inputs, but not without limit: prediction cost grows faster than linearly with it (on a laptop about 0.04 s per stage at 2048 candidates and 4 s at 16384, and there are two stages per iteration), so a few thousand is a sensible ceiling.
+With several inputs the candidates are drawn from a seeded Sobol sequence instead of an evenly spaced grid, since a grid of 500 points per input would be 125 million points in 3D. `n_candidates` is the number scored per stage, and it defaults to **500 for a single input and 2000 for more**, because the same count spread over several axes thins out quickly: 500 is 500 per axis with one input but only 7.9 with three. Raise it further for many inputs, but not without limit, since prediction cost grows faster than linearly (on a laptop about 0.04 s per stage at 2048 candidates and 4 s at 16384); a few thousand is a sensible ceiling.
 
 ### How precise is it with several inputs?
 
 Less precise than with one, and it is worth knowing why before trusting a result.
 
-Each iteration picks its next point in stages: a coarse pass over the whole space, then a refinement pass that re-searches a box around the best point so far. The box width follows the candidate spacing, and candidates thin out quickly as inputs are added. With 500 candidates:
+Each iteration picks its next point in stages: a coarse pass over the whole space, then a refinement pass that re-searches a box around the best point so far. The box width follows the candidate spacing, and candidates thin out quickly as inputs are added. With the default candidate count:
 
-| inputs | candidates per axis | box after 1st refinement | after 2nd |
-|---|---|---|---|
-| 1 | 500 | 0.8% of each axis | not used |
-| 2 | 22 | 18.7% | 3.5% |
-| 3 | 7.9 | 57.7% | 33.2% |
+| inputs | candidates (default) | per axis | box after 1st refinement | after 2nd |
+|---|---|---|---|---|
+| 1 | 500 | 500 | 0.8% of each axis | not used |
+| 2 | 2000 | 44.7 | 9.1% | 0.84% |
+| 3 | 2000 | 12.6 | 34.5% | 11.9% |
 
 This is why runs with more than one input refine **twice** and a single input refines **once**: in 1D the first box is already 0.8% of the axis, and a second pass would shrink it to the spacing between the points of a converged run, risking the same point being evaluated twice.
 
 Measured on the 3D test function in `run_test_3d.py` (`(x1-0.5)² + (x2+1)² + 0.2(x3-2)²`), with 20 iterations:
 
-| setting | `best_y` | distance to the true minimum | runtime |
-|---|---|---|---|
-| 500 candidates (default) | 0.0030 | 0.08 | 1.7 s |
-| 8000 candidates | 0.0014 | 0.04 | 15.6 s |
-| 1D demo, for comparison | - | 0.00055 | 1.6 s |
+| candidates | median `best_y` | mean | worst | runtime |
+|---|---|---|---|---|
+| 500 | 0.0095 | 0.0379 | 0.2146 | 1.7 s |
+| **2000 (default)** | 0.0079 | 0.0106 | **0.0253** | 2.2 s |
+| 4000 | 0.0037 | 0.0072 | 0.0242 | 4.5 s |
 
-So with several inputs, read a result as "the right region" rather than "the exact optimum". Raising `n_candidates` to a few thousand is the most effective single change, at roughly nine times the runtime; 2000 was no better than 500, since what helps is more candidates *per axis*. More starting points together with a smaller `ei_threshold` also helps (six points and `1e-8` reached `best_y` 0.0025). Raising `max_iterations` alone does not: the run converges via `ei_threshold` at around 29 evaluations either way.
+Over twelve seeds. The benefit of more candidates is mostly in the **bad runs**: the worst result improves more than eightfold from 500 to 2000, while the typical run barely moves. That is why the default rose to 2000 for several inputs; 4000 is better again if you can spend twice the time. For comparison, the 1D demo lands within `5.5e-4` of its true minimum.
+
+So with several inputs, read a result as "the right region" rather than "the exact optimum". More starting points together with a smaller `ei_threshold` also helps (six points and `1e-8` reached `best_y` 0.0025). Raising `max_iterations` alone does not: the run converges via `ei_threshold` at around 29 evaluations either way.
 
 **No point is ever evaluated twice.** Across all of these runs, no new point landed within 0.1% of an earlier one, so the search does not stall by re-sampling where it already looked.
 

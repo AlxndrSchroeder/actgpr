@@ -25,6 +25,15 @@ from actgpr.surrogate import GPyTorchSurrogate
 # same reasoning as ObjectiveFn's DEFAULT_JITTER_SEED.
 DEFAULT_CANDIDATE_SEED = 25
 
+# Candidates scored per stage when the caller does not choose. One input
+# gets 500, which is already 500 per axis. More inputs get 2000: candidates
+# spread over d axes, so the same count thins out quickly, and measurement
+# on a three-input problem showed the gain is in reliability rather than
+# typical accuracy (the worst result over twelve seeds improved from 0.215
+# to 0.025) for about half a second per run.
+DEFAULT_CANDIDATES_ONE_INPUT = 500
+DEFAULT_CANDIDATES_SEVERAL_INPUTS = 2000
+
 
 class Acquisition:
     """Expected Improvement acquisition function for active GPR optimisation.
@@ -52,7 +61,7 @@ class Acquisition:
         self,
         surrogate: GPyTorchSurrogate,
         search_bounds: Sequence[float] | Sequence[Sequence[float]],
-        n_candidates: int = 500,
+        n_candidates: int | None = None,
         seed: int = DEFAULT_CANDIDATE_SEED,
         refinement_stages: int | None = None,
     ) -> None:
@@ -65,13 +74,13 @@ class Acquisition:
         search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
             The closed interval of each input dimension within which
             candidates are generated. A single pair means one dimension.
-        n_candidates : int, optional
-            Number of candidate points scored in each of the two stages, by
-            default 500 (matches the OptimisationRun default). With several
-            input dimensions the same count is spread across all of them, so
-            raise it for problems with many dimensions; prediction cost grows
-            faster than linearly with it, so a few thousand is a sensible
-            ceiling.
+        n_candidates : int or None, optional
+            Number of candidate points scored in each stage. If None (the
+            default), 500 for a single input dimension and 2000 for more,
+            since the same count spread over several axes thins out quickly.
+            Raising it further mainly improves the worst case rather than the
+            typical one; prediction cost grows faster than linearly with it,
+            so a few thousand is a sensible ceiling.
         seed : int, optional
             Seed for the Sobol candidate sampler used with more than one
             input dimension, by default 25. Unused in one dimension, where
@@ -92,7 +101,15 @@ class Acquisition:
         self.surrogate = surrogate
         self.search_bounds = parse_search_bounds(search_bounds)
         self.n_dims = len(self.search_bounds)
-        self.n_candidates = n_candidates
+        self.n_candidates = (
+            n_candidates
+            if n_candidates is not None
+            else (
+                DEFAULT_CANDIDATES_ONE_INPUT
+                if self.n_dims == 1
+                else DEFAULT_CANDIDATES_SEVERAL_INPUTS
+            )
+        )
         self.seed = seed
         self.refinement_stages = (
             refinement_stages if refinement_stages is not None else min(self.n_dims, 2)

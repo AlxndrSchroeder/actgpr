@@ -58,6 +58,25 @@ class TestAcquisitionInit:
         assert acquisition.search_bounds == ((-3.0, 4.0),)
         assert acquisition.n_dims == 1
 
+    def test_default_candidate_count_depends_on_the_dimension(
+        self,
+        fitted_surrogate: GPyTorchSurrogate,
+        fitted_surrogate_3d: GPyTorchSurrogate,
+    ) -> None:
+        """Test that several inputs get more candidates by default.
+
+        The same count spread over d axes thins out quickly: 500 is 500 per
+        axis with one input but only 7.9 with three.
+        """
+        assert Acquisition(fitted_surrogate, (-3.0, 4.0)).n_candidates == 500
+        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).n_candidates == 2000
+
+    def test_explicit_candidate_count_overrides_the_default(
+        self, fitted_surrogate_3d: GPyTorchSurrogate
+    ) -> None:
+        """Test that a caller's own candidate count is kept."""
+        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D, 777).n_candidates == 777
+
     def test_stores_n_candidates(self, acquisition: Acquisition) -> None:
         """Test that the Acquisition stores the candidate count."""
         assert acquisition.n_candidates == 500

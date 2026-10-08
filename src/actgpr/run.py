@@ -68,7 +68,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int = 500,
+        n_candidates: int | None = None,
         noise: float = 1e-4,
         store_snapshots: bool = True,
         run_dir: Path | str | None = None,
@@ -111,8 +111,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int, optional
-            Number of candidate points for the acquisition function, by default 500.
+        n_candidates : int or None, optional
+            Number of candidate points the acquisition function scores in
+            each stage. If None (the default), 500 for a single input and
+            2000 for more, since the same count spread over several inputs
+            thins out quickly. Raising it further mainly improves the worst
+            case rather than the typical one.
         noise : float, optional
             Observation noise variance for the GP likelihood, by default 1e-4.
         store_snapshots : bool, optional
@@ -216,7 +220,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int = 500,
+        n_candidates: int | None = None,
         training_iter: int = 50,
         noise: float = 1e-4,
         store_snapshots: bool = True,
@@ -252,8 +256,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int, optional
-            Number of candidate points for the acquisition function, by default 500.
+        n_candidates : int or None, optional
+            Number of candidate points the acquisition function scores in
+            each stage. If None (the default), 500 for a single input and
+            2000 for more, since the same count spread over several inputs
+            thins out quickly. Raising it further mainly improves the worst
+            case rather than the typical one.
         training_iter : int, optional
             Number of hyperparameter optimisation iterations per surrogate fit,
             by default 50.
@@ -296,7 +304,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int = 500,
+        n_candidates: int | None = None,
         lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
@@ -333,8 +341,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int, optional
-            Number of candidate points for the acquisition function, by default 500.
+        n_candidates : int or None, optional
+            Number of candidate points the acquisition function scores in
+            each stage. If None (the default), 500 for a single input and
+            2000 for more, since the same count spread over several inputs
+            thins out quickly. Raising it further mainly improves the worst
+            case rather than the typical one.
         lengthscale : float or sequence of float, optional
             The RBF kernel lengthscale, by default 1.0. A single value is
             used for every input dimension; a sequence gives one value per
