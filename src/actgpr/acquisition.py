@@ -25,14 +25,18 @@ from actgpr.surrogate import GPyTorchSurrogate
 # same reasoning as ObjectiveFn's DEFAULT_JITTER_SEED.
 DEFAULT_CANDIDATE_SEED = 25
 
-# Candidates scored per stage when the caller does not choose. One input
-# gets 500, which is already 500 per axis. More inputs get 4000: candidates
-# spread over d axes, so the same count thins out quickly, and measurement
-# on a three-input problem over twelve seeds showed both a better typical
-# result (median best_y 0.0037 against 0.0095 at 500) and a far better
-# worst one (0.024 against 0.215), for a few seconds per run.
-DEFAULT_CANDIDATES_ONE_INPUT = 500
-DEFAULT_CANDIDATES_SEVERAL_INPUTS = 4000
+# Candidates scored per stage. Measurement on a three-input problem over
+# twelve seeds showed 4000 gives both a better typical result (median
+# best_y 0.0037 against 0.0095 at 500) and a far better worst one (0.024
+# against 0.215), for a few seconds per run.
+DEFAULT_CANDIDATES = 4000
+
+# How many times the refinement shrinks its box around the best candidate.
+# Candidates thin out as dimensions are added, so one stage leaves a box
+# covering a quarter of each axis in three dimensions; a second roughly
+# halves that again. Three were measured as worse than two, since shrinking
+# repeatedly around the first winner stops the search exploring.
+REFINEMENT_STAGES = 2
 
 
 class Acquisition:
@@ -42,8 +46,10 @@ class Acquisition:
     Scores candidate input points and selects the next input point to evaluate.
 
     Candidates are placed in stages: a coarse set covering the whole search
-    bounds, then one or two refinement sets in a shrinking box around the
-    best point found so far (see ``refinement_stages``).
+    bounds, then refinement sets in a shrinking box around the best point
+    found so far (see ``refinement_stages``). All of them are drawn from a
+    scrambled Sobol sequence, which fills the space evenly for any number
+    of input dimensions.
     With one input dimension both sets are evenly spaced grids. With more,
     a grid is unaffordable (500 per axis is 125 million points in 3D), so
     both sets are drawn from a scrambled Sobol sequence, which covers the
@@ -61,9 +67,9 @@ class Acquisition:
         self,
         surrogate: GPyTorchSurrogate,
         search_bounds: Sequence[float] | Sequence[Sequence[float]],
-        n_candidates: int | None = None,
+        n_candidates: int = DEFAULT_CANDIDATES,
         seed: int = DEFAULT_CANDIDATE_SEED,
-        refinement_stages: int | None = None,
+        refinement_stages: int = REFINEMENT_STAGES,
     ) -> None:
         """Initialize the Acquisition function.
 
@@ -74,46 +80,29 @@ class Acquisition:
         search_bounds : sequence of (lo, hi) pairs, or a single (lo, hi) pair
             The closed interval of each input dimension within which
             candidates are generated. A single pair means one dimension.
-        n_candidates : int or None, optional
-            Number of candidate points scored in each stage. If None (the
-            default), 500 for a single input dimension and 4000 for more,
-            since the same count spread over several axes thins out quickly.
-            Raising it further mainly improves the worst case rather than the
-            typical one; prediction cost grows faster than linearly with it,
-            so a few thousand is a sensible ceiling.
+        n_candidates : int, optional
+            Number of candidate points scored in each stage, by default
+            4000. Candidates spread over d axes, so the same count thins out
+            quickly as inputs are added. Raising it further mainly improves
+            the worst case rather than the typical one; prediction cost grows
+            faster than linearly with it, so a few thousand is a sensible
+            ceiling.
         seed : int, optional
             Seed for the Sobol candidate sampler used with more than one
             input dimension, by default 25. Unused in one dimension, where
             candidates are an evenly spaced grid.
-        refinement_stages : int or None, optional
-            How many times the zoom refinement shrinks its box around the
-            best candidate. If None (the default), 1 for a single input
-            dimension and 2 for more.
-
-            Candidates thin out as dimensions are added, so one stage leaves
-            a box covering more than half of each axis in three dimensions,
-            which barely refines anything, while in one dimension it is
-            already 0.8% of the axis. A second stage in one dimension would
-            shrink the box to the spacing between the points of a converged
-            run, risking evaluating the same point twice, which is the
-            stagnation the refinement exists to prevent.
+        refinement_stages : int, optional
+            How many times the refinement shrinks its box around the best
+            candidate, by default 2. One stage leaves a box covering a
+            quarter of each axis with three inputs, which barely refines
+            anything; three were measured as worse than two.
         """
         self.surrogate = surrogate
         self.search_bounds = parse_search_bounds(search_bounds)
         self.n_dims = len(self.search_bounds)
-        self.n_candidates = (
-            n_candidates
-            if n_candidates is not None
-            else (
-                DEFAULT_CANDIDATES_ONE_INPUT
-                if self.n_dims == 1
-                else DEFAULT_CANDIDATES_SEVERAL_INPUTS
-            )
-        )
+        self.n_candidates = n_candidates
         self.seed = seed
-        self.refinement_stages = (
-            refinement_stages if refinement_stages is not None else min(self.n_dims, 2)
-        )
+        self.refinement_stages = refinement_stages
 
         self._lower = torch.tensor(
             [lo for lo, _ in self.search_bounds], dtype=torch.float64
@@ -135,12 +124,6 @@ class Acquisition:
 
     def _candidates(self, lower: torch.Tensor, upper: torch.Tensor) -> torch.Tensor:
         """Place n_candidates input points inside the box [lower, upper]."""
-        if self.n_dims == 1:
-            grid = torch.linspace(
-                lower.item(), upper.item(), self.n_candidates, dtype=torch.float64
-            )
-            return grid.unsqueeze(-1)
-
         unit = self._sampler.draw(self.n_candidates, dtype=torch.float64)
         return lower + (upper - lower) * unit
 

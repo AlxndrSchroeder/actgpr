@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 
 from actgpr import mrr
 from actgpr._points import as_points, format_values, parse_search_bounds
-from actgpr.acquisition import Acquisition
+from actgpr.acquisition import DEFAULT_CANDIDATES, Acquisition
 from actgpr.objective_fn import Objective
 from actgpr.plotting import METRIC_FIELDS, _draw_metrics
 from actgpr.surrogate import GPyTorchSurrogate
@@ -64,7 +64,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int | None = None,
+        n_candidates: int = DEFAULT_CANDIDATES,
         noise: float = 1e-4,
         run_dir: Path | str | None = None,
         *,
@@ -106,12 +106,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int or None, optional
+        n_candidates : int, optional
             Number of candidate points the acquisition function scores in
-            each stage. If None (the default), 500 for a single input and
-            4000 for more, since the same count spread over several inputs
-            thins out quickly. Raising it further mainly improves the worst
-            case rather than the typical one.
+            each stage, by default 4000. Candidates spread over the inputs,
+            so the same count thins out as inputs are added. Raising it
+            further mainly improves the worst case rather than the typical
+            one.
         noise : float, optional
             Observation noise variance for the GP likelihood, by default 1e-4.
 
@@ -201,7 +201,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int | None = None,
+        n_candidates: int = DEFAULT_CANDIDATES,
         training_iter: int = 50,
         noise: float = 1e-4,
         run_dir: Path | str | None = None,
@@ -236,12 +236,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int or None, optional
+        n_candidates : int, optional
             Number of candidate points the acquisition function scores in
-            each stage. If None (the default), 500 for a single input and
-            4000 for more, since the same count spread over several inputs
-            thins out quickly. Raising it further mainly improves the worst
-            case rather than the typical one.
+            each stage, by default 4000. Candidates spread over the inputs,
+            so the same count thins out as inputs are added. Raising it
+            further mainly improves the worst case rather than the typical
+            one.
         training_iter : int, optional
             Number of hyperparameter optimisation iterations per surrogate fit,
             by default 50.
@@ -277,7 +277,7 @@ class OptimisationRun:
         initial_train_x: torch.Tensor | Sequence[float] | Sequence[Sequence[float]],
         max_iterations: int,
         ei_threshold: float,
-        n_candidates: int | None = None,
+        n_candidates: int = DEFAULT_CANDIDATES,
         lengthscale: float | Sequence[float] = 1.0,
         outputscale: float = 1.0,
         noise: float = 1e-4,
@@ -313,12 +313,12 @@ class OptimisationRun:
             cycles, to execute (budget cap).
         ei_threshold : float
             The loop stops when the maximum EI score falls below this value.
-        n_candidates : int or None, optional
+        n_candidates : int, optional
             Number of candidate points the acquisition function scores in
-            each stage. If None (the default), 500 for a single input and
-            4000 for more, since the same count spread over several inputs
-            thins out quickly. Raising it further mainly improves the worst
-            case rather than the typical one.
+            each stage, by default 4000. Candidates spread over the inputs,
+            so the same count thins out as inputs are added. Raising it
+            further mainly improves the worst case rather than the typical
+            one.
         lengthscale : float or sequence of float, optional
             The RBF kernel lengthscale, by default 1.0. A single value is
             used for every input dimension; a sequence gives one value per

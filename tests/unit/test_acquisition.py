@@ -58,18 +58,15 @@ class TestAcquisitionInit:
         assert acquisition.search_bounds == ((-3.0, 4.0),)
         assert acquisition.n_dims == 1
 
-    def test_default_candidate_count_depends_on_the_dimension(
-        self,
-        fitted_surrogate: GPyTorchSurrogate,
-        fitted_surrogate_3d: GPyTorchSurrogate,
-    ) -> None:
-        """Test that several inputs get more candidates by default.
+    def test_default_candidate_count(self, fitted_surrogate: GPyTorchSurrogate) -> None:
+        """Test the documented default, the same for any number of inputs."""
+        assert Acquisition(fitted_surrogate, (-3.0, 4.0)).n_candidates == 4000
 
-        The same count spread over d axes thins out quickly: 500 is 500 per
-        axis with one input but only 7.9 with three.
-        """
-        assert Acquisition(fitted_surrogate, (-3.0, 4.0)).n_candidates == 500
-        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).n_candidates == 4000
+    def test_default_refinement_stages(
+        self, fitted_surrogate: GPyTorchSurrogate
+    ) -> None:
+        """Test that the refinement shrinks its box twice by default."""
+        assert Acquisition(fitted_surrogate, (-3.0, 4.0)).refinement_stages == 2
 
     def test_explicit_candidate_count_overrides_the_default(
         self, fitted_surrogate_3d: GPyTorchSurrogate
@@ -247,43 +244,25 @@ class TestFindNextInputPoint:
 class TestZoomRefinement:
     """Tests for the fine-grid refinement step in find_next_input_point()."""
 
-    def test_stored_candidates_still_span_full_search_bounds(
+    def test_coarse_candidates_cover_the_whole_search_bounds(
         self, acquisition: Acquisition
     ) -> None:
-        """Test that self.candidates stays the coarse grid used for plotting.
+        """Test that self.candidates stays the coarse set, not the refined box.
 
-        The fine grid used to refine the returned point is local and
-        internal — it must not replace the coarse candidates/f_mean/f_var/
-        ei_scores arrays that _plot_iteration_snapshot() relies on to draw
-        the full EI landscape.
+        The refinement searches a small box around the best candidate; it
+        must not replace the coarse candidates and their scores, which are
+        what the recorded max_ei refers to.
         """
         acquisition.find_next_input_point(current_best=0.0)
-
         ((lo, hi),) = acquisition.search_bounds
-        expected_coarse_grid = torch.linspace(
-            lo, hi, acquisition.n_candidates, dtype=torch.float64
-        )
 
         assert acquisition.candidates.shape == (acquisition.n_candidates, 1)
-        assert torch.equal(acquisition.candidates[:, 0], expected_coarse_grid)
-
-    def test_candidate_grid_has_float64_precision(
-        self, acquisition: Acquisition
-    ) -> None:
-        """Test that the 1D grid is not quietly generated in float32.
-
-        Before 0.4 the grid used torch's float32 default while the rest of
-        the package was float64, so candidates carried ~4e-8 rounding error.
-        """
-        acquisition.find_next_input_point(current_best=0.0)
-        ((lo, hi),) = acquisition.search_bounds
-        step = (hi - lo) / (acquisition.n_candidates - 1)
-
         assert acquisition.candidates.dtype == torch.float64
-        assert acquisition.candidates[1, 0].item() == pytest.approx(
-            lo + step, abs=1e-14
-        )
-        assert acquisition.ei_scores.shape == (acquisition.n_candidates,)
+        assert torch.all(acquisition.candidates >= lo)
+        assert torch.all(acquisition.candidates <= hi)
+        # Sobol fills the interval rather than bunching up in one part.
+        spread = acquisition.candidates.max() - acquisition.candidates.min()
+        assert spread > 0.95 * (hi - lo)
 
     def test_refined_point_can_fall_between_coarse_grid_points(
         self, fitted_surrogate: GPyTorchSurrogate
@@ -336,27 +315,6 @@ class TestZoomRefinement:
         ).item()
 
         assert refined_ei >= coarse_max_ei - 1e-6
-
-    def test_one_refinement_stage_for_a_single_input(
-        self, acquisition: Acquisition
-    ) -> None:
-        """Test that a 1D search refines once.
-
-        Its box is already 0.8% of the axis; a second stage would shrink it
-        to the spacing between the points of a converged run and risk
-        evaluating the same point twice.
-        """
-        assert acquisition.refinement_stages == 1
-
-    def test_two_refinement_stages_for_several_inputs(
-        self, fitted_surrogate_3d: GPyTorchSurrogate
-    ) -> None:
-        """Test that a 3D search refines twice.
-
-        Candidates thin out with dimension: one stage leaves a box covering
-        more than half of each axis in 3D, which barely refines anything.
-        """
-        assert Acquisition(fitted_surrogate_3d, BOUNDS_3D).refinement_stages == 2
 
     def test_refinement_stages_can_be_set_explicitly(
         self, fitted_surrogate_3d: GPyTorchSurrogate
